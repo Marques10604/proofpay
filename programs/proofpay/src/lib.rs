@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 declare_id!("5rULicy7hRi91KADEB1J4kgPtezJHgM96WM7pXCYNYFY");
 
@@ -27,6 +27,7 @@ pub mod proofpay {
         escrow.escrow_id = escrow_id;
         escrow.payer = ctx.accounts.payer.key();
         escrow.payee = ctx.accounts.payee.key();
+        escrow.usdc_mint = ctx.accounts.usdc_mint.key(); // store accepted mint
         escrow.total_amount = total_amount;
         escrow.released_amount = 0;
         escrow.milestones = milestones;
@@ -218,45 +219,82 @@ pub struct CreateEscrow<'info> {
     pub payer: Signer<'info>,
     /// CHECK: payee address only, no signing required here
     pub payee: UncheckedAccount<'info>,
+    /// The accepted payment mint (USDC or USDG). Stored in escrow for future vault validation.
+    pub usdc_mint: Account<'info, Mint>,
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct FundEscrow<'info> {
-    #[account(mut, has_one = payer)]
+    #[account(mut, has_one = payer, has_one = usdc_mint)]
     pub escrow: Account<'info, EscrowAccount>,
     #[account(mut)]
     pub payer: Signer<'info>,
-    #[account(mut)]
+    /// Payer's token account — must hold the accepted mint.
+    #[account(
+        mut,
+        token::mint = usdc_mint,
+        token::authority = payer,
+    )]
     pub payer_token_account: Account<'info, TokenAccount>,
-    #[account(mut)]
+    /// Vault PDA token account — mint and authority enforced at account level.
+    /// Security: only USDC/USDG accepted; only the escrow PDA can sign withdrawals.
+    #[account(
+        mut,
+        token::mint = usdc_mint,
+        token::authority = escrow,
+    )]
     pub vault: Account<'info, TokenAccount>,
+    /// The accepted payment mint (must match escrow.usdc_mint via has_one).
+    pub usdc_mint: Account<'info, Mint>,
     pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
 pub struct ReleaseMilestone<'info> {
-    #[account(mut, has_one = payer, has_one = payee)]
+    #[account(mut, has_one = payer, has_one = payee, has_one = usdc_mint)]
     pub escrow: Account<'info, EscrowAccount>,
     pub payer: Signer<'info>,
-    /// CHECK: payee is verified via escrow constraint
+    /// CHECK: payee is verified via has_one = payee on escrow
     pub payee: UncheckedAccount<'info>,
-    #[account(mut)]
+    /// Vault — only the escrow PDA can authorize transfers out.
+    #[account(
+        mut,
+        token::mint = usdc_mint,
+        token::authority = escrow,
+    )]
     pub vault: Account<'info, TokenAccount>,
-    #[account(mut)]
+    /// Payee's destination token account — must hold the same mint.
+    #[account(
+        mut,
+        token::mint = usdc_mint,
+    )]
     pub payee_token_account: Account<'info, TokenAccount>,
+    /// Must match escrow.usdc_mint (enforced by has_one).
+    pub usdc_mint: Account<'info, Mint>,
     pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
 pub struct RefundOnTimeout<'info> {
-    #[account(mut, has_one = payer)]
+    #[account(mut, has_one = payer, has_one = usdc_mint)]
     pub escrow: Account<'info, EscrowAccount>,
     pub payer: Signer<'info>,
-    #[account(mut)]
+    /// Vault — escrow PDA must sign the refund transfer.
+    #[account(
+        mut,
+        token::mint = usdc_mint,
+        token::authority = escrow,
+    )]
     pub vault: Account<'info, TokenAccount>,
-    #[account(mut)]
+    /// Payer's refund destination — must hold the same mint.
+    #[account(
+        mut,
+        token::mint = usdc_mint,
+    )]
     pub payer_token_account: Account<'info, TokenAccount>,
+    /// Must match escrow.usdc_mint (enforced by has_one).
+    pub usdc_mint: Account<'info, Mint>,
     pub token_program: Program<'info, Token>,
 }
 
@@ -292,6 +330,10 @@ pub struct EscrowAccount {
     pub escrow_id: [u8; 32],
     pub payer: Pubkey,
     pub payee: Pubkey,
+    /// The accepted payment mint (USDC or USDG).
+    /// Stored at creation so every future instruction can validate the vault mint
+    /// via `has_one = usdc_mint` without trusting the client.
+    pub usdc_mint: Pubkey,
     pub total_amount: u64,
     pub released_amount: u64,
     pub milestones: Vec<Milestone>,
@@ -310,23 +352,24 @@ impl EscrowAccount {
     /// Max size: fixed fields + 10 milestones (bounded) + dispute fields
     ///
     /// Breakdown:
-    ///   escrow_id:       32
-    ///   payer:           32
-    ///   payee:           32
-    ///   total_amount:     8
-    ///   released_amount:  8
+    ///   escrow_id:        32
+    ///   payer:            32
+    ///   payee:            32
+    ///   usdc_mint:        32  ← NEW (vault mint guard)
+    ///   total_amount:      8
+    ///   released_amount:   8
     ///   milestones:  4 + (10 * 66) = 664
-    ///   current_milestone: 1
-    ///   state (enum):     1
-    ///   created_at:       8
-    ///   timeout_at:       8
-    ///   bump:             1
-    ///   disputed_at:      8
-    ///   disputed_by:     32
-    ///   dispute_reason: 128
+    ///   current_milestone:  1
+    ///   state (enum):       1
+    ///   created_at:         8
+    ///   timeout_at:         8
+    ///   bump:               1
+    ///   disputed_at:        8
+    ///   disputed_by:       32
+    ///   dispute_reason:   128
     pub const MAX_SIZE: usize =
-        32 + 32 + 32 + 8 + 8 + (4 + 10 * Milestone::SIZE) + 1 + 1 + 8 + 8 + 1
-        + 8 + 32 + 128; // dispute fields
+        32 + 32 + 32 + 32 + 8 + 8 + (4 + 10 * Milestone::SIZE) + 1 + 1 + 8 + 8 + 1
+        + 8 + 32 + 128; // +32 = usdc_mint field
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
@@ -408,4 +451,6 @@ pub enum EscrowError {
     TimeoutNotReached,
     #[msg("Escrow is already in Disputed state")]
     EscrowAlreadyDisputed,
+    #[msg("Vault or token account has wrong mint — only USDC/USDG accepted")]
+    WrongMint,
 }
