@@ -150,6 +150,29 @@ const PROOFPAY_IDL: Idl = {
         { name: "totalAmount", type: "u64",                 index: false },
       ],
     },
+    // R4: events missing from initial IDL — added per audit FINDING-4
+    {
+      name: "EscrowFunded",
+      fields: [
+        { name: "escrowId", type: { array: ["u8", 32] }, index: false },
+        { name: "amount",   type: "u64",                 index: false },
+      ],
+    },
+    {
+      name: "MilestoneReleased",
+      fields: [
+        { name: "escrowId",       type: { array: ["u8", 32] }, index: false },
+        { name: "milestoneIndex", type: "u8",                  index: false },
+        { name: "amount",         type: "u64",                 index: false },
+      ],
+    },
+    {
+      name: "EscrowRefunded",
+      fields: [
+        { name: "escrowId", type: { array: ["u8", 32] }, index: false },
+        { name: "amount",   type: "u64",                 index: false },
+      ],
+    },
     {
       name: "DisputeOpened",
       fields: [
@@ -160,15 +183,17 @@ const PROOFPAY_IDL: Idl = {
     },
   ],
   errors: [
-    { code: 6000, name: "InvalidState",           msg: "Invalid escrow state for this operation" },
-    { code: 6001, name: "Unauthorized",           msg: "Unauthorized signer" },
-    { code: 6002, name: "InvalidAmount",          msg: "Invalid amount" },
-    { code: 6003, name: "MilestoneBpsMismatch",   msg: "Milestone basis points must sum to 10000" },
-    { code: 6004, name: "InvalidMilestoneCount",  msg: "Invalid number of milestones (1-10)" },
-    { code: 6005, name: "AllMilestonesReleased",  msg: "All milestones have been released" },
-    { code: 6006, name: "TimeoutNotReached",      msg: "Timeout period has not been reached yet" },
-    { code: 6007, name: "EscrowAlreadyDisputed",  msg: "Escrow is already in Disputed state" },
-    { code: 6008, name: "WrongMint",              msg: "Vault or token account has wrong mint — only USDC/USDG accepted" },
+    { code: 6000, name: "InvalidState",          msg: "Invalid escrow state for this operation" },
+    { code: 6001, name: "Unauthorized",          msg: "Unauthorized signer" },
+    { code: 6002, name: "InvalidAmount",         msg: "Invalid amount" },
+    { code: 6003, name: "MilestoneBpsMismatch",  msg: "Milestone basis points must sum to 10000" },
+    { code: 6004, name: "InvalidMilestoneCount", msg: "Invalid number of milestones (1-10)" },
+    { code: 6005, name: "AllMilestonesReleased", msg: "All milestones have been released" },
+    { code: 6006, name: "TimeoutNotReached",     msg: "Timeout period has not been reached yet" },
+    { code: 6007, name: "EscrowAlreadyDisputed", msg: "Escrow is already in Disputed state" },
+    { code: 6008, name: "WrongMint",             msg: "Vault or token account has wrong mint — only USDC/USDG accepted" },
+    // R4: added per audit FINDING-3 (R3 in lib.rs)
+    { code: 6009, name: "ArithmeticOverflow",    msg: "Arithmetic overflow or underflow in amount calculation" },
   ],
 };
 
@@ -260,9 +285,9 @@ export interface EscrowAccount {
   // ── Dispute fields ─────────────────────────────────────────────────────
   /** null if no dispute has been opened */
   disputedAt: Date | null;
-  /** Address of the party that opened the dispute (payer or payee) */
-  disputedBy: PublicKey;
-  /** Human-readable dispute reason (decoded from [u8; 128]) */
+  /** Address of the party that opened the dispute (payer or payee). null if no dispute. */
+  disputedBy: PublicKey | null;
+  /** Human-readable dispute reason (decoded from [u8; 128]). Empty string if no dispute. */
   disputeReason: string;
 }
 
@@ -301,12 +326,18 @@ function mapRawEscrow(raw: any): EscrowAccount {
     createdAt:        new Date(Number(raw.createdAt.toString()) * 1000),
     timeoutAt:        new Date(Number(raw.timeoutAt.toString()) * 1000),
     bump:             raw.bump,
-    // Dispute fields: disputedAt = 0 means no dispute
-    disputedAt:  raw.disputedAt.toNumber() === 0
+    // R5 (audit FINDING-6): disputedAt=0 means no dispute has been opened.
+    // In that case, disputedBy is Pubkey::default() (11111...111) — return null
+    // instead of a misleading system program address.
+    disputedAt:    raw.disputedAt.toNumber() === 0
       ? null
       : new Date(Number(raw.disputedAt.toString()) * 1000),
-    disputedBy:    raw.disputedBy as PublicKey,
-    disputeReason: decodeBytes(raw.disputeReason as number[]),
+    disputedBy:    raw.disputedAt.toNumber() === 0
+      ? null
+      : raw.disputedBy as PublicKey,
+    disputeReason: raw.disputedAt.toNumber() === 0
+      ? ""
+      : decodeBytes(raw.disputeReason as number[]),
   };
 }
 

@@ -87,7 +87,12 @@ pub mod proofpay {
         require!(milestone_idx < escrow.milestones.len(), EscrowError::AllMilestonesReleased);
 
         let milestone = &escrow.milestones[milestone_idx];
-        let release_amount = (escrow.total_amount as u128 * milestone.release_bps as u128 / 10000) as u64;
+        // R2: checked arithmetic — skill defi-security: "NEVER use unchecked math in DeFi"
+        let release_amount = (escrow.total_amount as u128)
+            .checked_mul(milestone.release_bps as u128)
+            .and_then(|v| v.checked_div(10000))
+            .and_then(|v| u64::try_from(v).ok())
+            .ok_or(EscrowError::ArithmeticOverflow)?;
 
         // Transfer from vault to payee
         let escrow_id = escrow.escrow_id;
@@ -129,7 +134,10 @@ pub mod proofpay {
         require!(escrow.state == EscrowState::Funded, EscrowError::InvalidState);
         require!(clock.unix_timestamp >= escrow.timeout_at, EscrowError::TimeoutNotReached);
 
-        let remaining = escrow.total_amount - escrow.released_amount;
+        // R2: checked subtraction — prevents underflow if released_amount ever exceeds total
+        let remaining = escrow.total_amount
+            .checked_sub(escrow.released_amount)
+            .ok_or(EscrowError::ArithmeticOverflow)?;
         let escrow_id = escrow.escrow_id;
         let bump = escrow.bump;
         let seeds = &[b"escrow", escrow_id.as_ref(), &[bump]];
@@ -252,7 +260,16 @@ pub struct FundEscrow<'info> {
 
 #[derive(Accounts)]
 pub struct ReleaseMilestone<'info> {
-    #[account(mut, has_one = payer, has_one = payee, has_one = usdc_mint)]
+    /// R1: `close = payer` — when the last milestone fires and state → Completed,
+    /// Anchor zeroes the account data and transfers all rent lamports back to payer.
+    /// This prevents orphan PDAs accumulating ~0.003 SOL each on-chain forever.
+    #[account(
+        mut,
+        close = payer,
+        has_one = payer,
+        has_one = payee,
+        has_one = usdc_mint,
+    )]
     pub escrow: Account<'info, EscrowAccount>,
     pub payer: Signer<'info>,
     /// CHECK: payee is verified via has_one = payee on escrow
@@ -277,7 +294,14 @@ pub struct ReleaseMilestone<'info> {
 
 #[derive(Accounts)]
 pub struct RefundOnTimeout<'info> {
-    #[account(mut, has_one = payer, has_one = usdc_mint)]
+    /// R1: `close = payer` — on timeout, escrow is terminal (Refunded state).
+    /// Closing the account recovers ~0.003 SOL rent for the original payer.
+    #[account(
+        mut,
+        close = payer,
+        has_one = payer,
+        has_one = usdc_mint,
+    )]
     pub escrow: Account<'info, EscrowAccount>,
     pub payer: Signer<'info>,
     /// Vault — escrow PDA must sign the refund transfer.
@@ -453,4 +477,6 @@ pub enum EscrowError {
     EscrowAlreadyDisputed,
     #[msg("Vault or token account has wrong mint — only USDC/USDG accepted")]
     WrongMint,
+    #[msg("Arithmetic overflow or underflow in amount calculation")]
+    ArithmeticOverflow,
 }
