@@ -153,6 +153,50 @@ pub mod proofpay {
 
         Ok(())
     }
+
+    /// Open a dispute — can only be called by the payer (maker) or the payee (taker).
+    /// Transitions the escrow from Funded to Disputed, freezing all milestone releases
+    /// and refunds until an external arbitrator resolves the dispute.
+    ///
+    /// Security pattern (build-defi-protocol skill):
+    ///   CHECK  → state must be Funded + invoker must be payer or payee
+    ///   EFFECT → update state to Disputed + record timestamp
+    ///   (no CPI — funds remain locked in vault until resolution)
+    pub fn open_dispute(ctx: Context<OpenDispute>, reason: [u8; 128]) -> Result<()> {
+        let escrow = &mut ctx.accounts.escrow;
+        let clock = Clock::get()?;
+
+        // ── CHECKS ────────────────────────────────────────────────────────────
+        // Only Funded escrows can be disputed (not already Completed, Refunded, or Disputed)
+        require!(
+            escrow.state == EscrowState::Funded,
+            EscrowError::InvalidState
+        );
+
+        // Guard: invoker must be payer (maker) OR payee (taker).
+        // The account-level constraint in OpenDispute already enforces this,
+        // but we add an explicit require! here as a defense-in-depth check.
+        let invoker_key = ctx.accounts.invoker.key();
+        require!(
+            invoker_key == escrow.payer || invoker_key == escrow.payee,
+            EscrowError::Unauthorized
+        );
+
+        // ── EFFECTS ───────────────────────────────────────────────────────────
+        escrow.state = EscrowState::Disputed;
+        escrow.disputed_at = clock.unix_timestamp;
+        escrow.dispute_reason = reason;
+        escrow.disputed_by = invoker_key;
+
+        // ── EVENT ─────────────────────────────────────────────────────────────
+        emit!(DisputeOpened {
+            escrow_id: escrow.escrow_id,
+            disputed_by: invoker_key,
+            timestamp: clock.unix_timestamp,
+        });
+
+        Ok(())
+    }
 }
 
 // ─────────────────────────────────────────────
@@ -216,6 +260,29 @@ pub struct RefundOnTimeout<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+/// Accounts for `open_dispute`.
+///
+/// Security: The `constraint` below enforces at the account-validation layer
+/// (before instruction logic runs) that the signer is either payer or payee.
+/// This is the Anchor-idiomatic pattern — account constraints are checked by
+/// the framework before the instruction function body executes.
+#[derive(Accounts)]
+pub struct OpenDispute<'info> {
+    #[account(
+        mut,
+        // Anchor constraint: rejects the transaction if the invoker is neither
+        // the payer (maker) nor the payee (taker). Error is returned before
+        // any instruction logic runs — defense-in-depth layer 1.
+        constraint = (
+            invoker.key() == escrow.payer ||
+            invoker.key() == escrow.payee
+        ) @ EscrowError::Unauthorized
+    )]
+    pub escrow: Account<'info, EscrowAccount>,
+    /// The party opening the dispute — must be either payer or payee.
+    pub invoker: Signer<'info>,
+}
+
 // ─────────────────────────────────────────────
 // State
 // ─────────────────────────────────────────────
@@ -233,11 +300,33 @@ pub struct EscrowAccount {
     pub created_at: i64,
     pub timeout_at: i64,
     pub bump: u8,
+    // ── Dispute fields (populated by open_dispute) ────────────────────────
+    pub disputed_at: i64,          // unix timestamp when dispute was opened (0 = none)
+    pub disputed_by: Pubkey,       // which party opened the dispute
+    pub dispute_reason: [u8; 128], // fixed-size reason string (UTF-8 encoded)
 }
 
 impl EscrowAccount {
-    /// Max size: fixed fields + 10 milestones (bounded)
-    pub const MAX_SIZE: usize = 32 + 32 + 32 + 8 + 8 + (4 + 10 * Milestone::SIZE) + 1 + 1 + 8 + 8 + 1;
+    /// Max size: fixed fields + 10 milestones (bounded) + dispute fields
+    ///
+    /// Breakdown:
+    ///   escrow_id:       32
+    ///   payer:           32
+    ///   payee:           32
+    ///   total_amount:     8
+    ///   released_amount:  8
+    ///   milestones:  4 + (10 * 66) = 664
+    ///   current_milestone: 1
+    ///   state (enum):     1
+    ///   created_at:       8
+    ///   timeout_at:       8
+    ///   bump:             1
+    ///   disputed_at:      8
+    ///   disputed_by:     32
+    ///   dispute_reason: 128
+    pub const MAX_SIZE: usize =
+        32 + 32 + 32 + 8 + 8 + (4 + 10 * Milestone::SIZE) + 1 + 1 + 8 + 8 + 1
+        + 8 + 32 + 128; // dispute fields
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
@@ -290,6 +379,13 @@ pub struct EscrowRefunded {
     pub amount: u64,
 }
 
+#[event]
+pub struct DisputeOpened {
+    pub escrow_id: [u8; 32],
+    pub disputed_by: Pubkey,  // payer or payee
+    pub timestamp: i64,
+}
+
 // ─────────────────────────────────────────────
 // Errors
 // ─────────────────────────────────────────────
@@ -310,4 +406,6 @@ pub enum EscrowError {
     AllMilestonesReleased,
     #[msg("Timeout period has not been reached yet")]
     TimeoutNotReached,
+    #[msg("Escrow is already in Disputed state")]
+    EscrowAlreadyDisputed,
 }
