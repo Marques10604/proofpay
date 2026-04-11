@@ -1,0 +1,26 @@
+# Binaries
+target/
+dist/
+
+# Solana keypairs — NEVER commit these
+**/id.json
+**/*.keypair.json
+.env
+.env.*
+
+# Node
+node_modules/
+*.log
+
+# Anchor build artifacts
+.anchor/
+**/.anchor/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
