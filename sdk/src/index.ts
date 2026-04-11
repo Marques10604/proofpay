@@ -56,7 +56,7 @@ export class ProofPayClient {
 
     this.connection = new Connection(rpcUrl, "confirmed");
     this.programId = new PublicKey(
-      config.programId ?? "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+      config.programId ?? "5rULicy7hRi91KADEB1J4kgPtezJHgM96WM7pXCYNYFY"
     );
   }
 
