@@ -198,6 +198,7 @@ pub mod proofpay {
         escrow.disputed_at = clock.unix_timestamp;
         escrow.dispute_reason = reason;
         escrow.disputed_by = invoker_key;
+        escrow.dispute_timeout_at = clock.unix_timestamp + (7 * 24 * 3600);
 
         // ── EVENT ─────────────────────────────────────────────────────────────
         emit!(DisputeOpened {
@@ -249,6 +250,45 @@ pub mod proofpay {
             escrow_id: escrow.escrow_id,
             resolved_by: ctx.accounts.oracle.key(),
             release_to_payee,
+            amount: remaining,
+        });
+
+        Ok(())
+    }
+
+    /// Fallback dispute resolution if the oracle fails to respond within 7 days.
+    /// Reverts the remaining funds to the payer automatically.
+    pub fn fallback_dispute_resolution(ctx: Context<FallbackDisputeResolution>) -> Result<()> {
+        let escrow = &mut ctx.accounts.escrow;
+        let clock = Clock::get()?;
+
+        require!(escrow.state == EscrowState::Disputed, EscrowError::InvalidState);
+        require!(clock.unix_timestamp >= escrow.dispute_timeout_at, EscrowError::TimeoutNotReached);
+
+        let remaining = escrow.total_amount
+            .checked_sub(escrow.released_amount)
+            .ok_or(EscrowError::ArithmeticOverflow)?;
+
+        let escrow_id = escrow.escrow_id;
+        let bump = escrow.bump;
+        let seeds = &[b"escrow", escrow_id.as_ref(), &[bump]];
+        let signer = &[&seeds[..]];
+
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.vault.to_account_info(),
+            to: ctx.accounts.payer_token_account.to_account_info(),
+            authority: escrow.to_account_info(),
+        };
+
+        token::transfer(
+            CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), cpi_accounts, signer),
+            remaining,
+        )?;
+
+        emit!(DisputeResolved {
+            escrow_id: escrow.escrow_id,
+            resolved_by: ctx.accounts.invoker.key(),
+            release_to_payee: false,
             amount: remaining,
         });
 
@@ -425,6 +465,31 @@ pub struct ResolveDispute<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+#[derive(Accounts)]
+pub struct FallbackDisputeResolution<'info> {
+    #[account(
+        mut,
+        close = payer,
+        has_one = payer,
+        has_one = usdc_mint,
+    )]
+    pub escrow: Account<'info, EscrowAccount>,
+    pub invoker: Signer<'info>,
+    /// CHECK: Payer address to receive close rent
+    #[account(mut)]
+    pub payer: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        token::mint = usdc_mint,
+        token::authority = escrow,
+    )]
+    pub vault: Account<'info, TokenAccount>,
+    #[account(mut, token::mint = usdc_mint)]
+    pub payer_token_account: Account<'info, TokenAccount>,
+    pub usdc_mint: Account<'info, Mint>,
+    pub token_program: Program<'info, Token>,
+}
+
 // ─────────────────────────────────────────────
 // State
 // ─────────────────────────────────────────────
@@ -451,6 +516,7 @@ pub struct EscrowAccount {
     pub disputed_at: i64,          // unix timestamp when dispute was opened (0 = none)
     pub disputed_by: Pubkey,       // which party opened the dispute
     pub dispute_reason: [u8; 128], // fixed-size reason string (UTF-8 encoded)
+    pub dispute_timeout_at: i64,   // timestamp when fallback resolution can be invoked
 }
 
 impl EscrowAccount {
@@ -473,9 +539,10 @@ impl EscrowAccount {
     ///   disputed_at:        8
     ///   disputed_by:       32
     ///   dispute_reason:   128
+    ///   dispute_timeout_at: 8
     pub const MAX_SIZE: usize =
         32 + 32 + 32 + 32 + 32 + 8 + 8 + (4 + 10 * Milestone::SIZE) + 1 + 1 + 8 + 8 + 1
-        + 8 + 32 + 128; // +32 = oracle, +32 = usdc_mint field
+        + 8 + 32 + 128 + 8; // +32 = oracle, +32 = usdc_mint field, +8 = dispute_timeout_at
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
