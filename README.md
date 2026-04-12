@@ -1,5 +1,7 @@
 # ProofPay 🔐
 
+> **We don't just process payments. We verify reality before money moves.**
+
 > Solana-native B2B escrow protocol with x402 payment routing — letting AI agents and businesses transact with trustless, milestone-based settlement.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -15,6 +17,23 @@ ProofPay is a **trustless B2B escrow protocol** built on Solana that combines tw
 1. **On-Chain Milestone Escrow (Anchor Program)** — A smart contract that locks funds (USDC/USDG) and releases them automatically upon cryptographic proof of delivery — no human arbitrator needed. Supports partial escrow (per-milestone locking), automatic refund on timeout, and multisig dispute resolution.
 
 2. **Native x402 Protocol Integration** — ProofPay exposes HTTP endpoints following the [x402 standard](https://x402.org) (HTTP 402 "Payment Required"). This allows autonomous AI agents — such as those built with LangChain, CrewAI, or Eliza (ai16z) — to discover, negotiate, and settle B2B services without human intervention.
+
+---
+
+## 🔌 Build on ProofPay (Universal Infrastructure)
+
+ProofPay is designed as a **universal settlement infrastructure**. It is completely unopinionated about your business model, allowing you to build any platform on top of our smart contracts and x402 routing protocol. You bring the UI and the users; we handle the trustless execution.
+
+### 🌟 Core Use Cases
+
+1. **Freelance Platforms**
+   Replace legacy escrow providers with a web3-native protocol. Clients lock USDC upfront, and freelancers receive funds directly to their wallets upon milestone completion—no high middleman fees, no manual invoicing.
+
+2. **Decentralized Marketplaces**
+   Build the next generation of B2B SaaS or creative marketplaces. ProofPay ensures that buyers are protected until delivery, and sellers have mathematical guarantees that the funds exist and are committed on-chain.
+
+3. **High-Value B2B Contracts**
+   Secure cross-border agreements for software agencies, consultancies, or enterprise procurement. Integrate ProofPay into your custom proposal flow to remove counterparty risk and eliminate accounts receivable friction entirely.
 
 ---
 
