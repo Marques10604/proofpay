@@ -400,7 +400,7 @@ pub struct ResolveDispute<'info> {
         close = payer,
         has_one = payer,
         has_one = payee,
-        has_one = oracle,
+        has_one = oracle @ EscrowError::Unauthorized,
         has_one = usdc_mint,
     )]
     pub escrow: Account<'info, EscrowAccount>,
