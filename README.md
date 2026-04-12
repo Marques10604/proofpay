@@ -85,11 +85,22 @@ proofpay/
 
 | Milestone | Description | Status |
 |-----------|-------------|--------|
-| M1 | Anchor escrow program (devnet) | 🔄 In Progress |
-| M2 | x402 HTTP server + on-chain verification | 📋 Planned |
-| M3 | TypeScript SDK (`@proofpay/sdk`) | 📋 Planned |
+| M1 | Anchor escrow program (Contract) | ✅ Done |
+| M2 | Security Suite | ✅ Done |
+| M3 | Supabase Event Mapping | ✅ Done |
 | M4 | React dashboard + wallet integration | 📋 Planned |
 | M5 | Mainnet launch + Colosseum submission | 📋 Planned |
+
+---
+
+## 🛡️ Technical Rigor & Security
+
+O ProofPay foi desenhado com foco em segurança rigorosa e otimização para a mainnet:
+
+- **PDA Strategy:** O protocolo utiliza sementes determinísticas (`[b"escrow", escrow_id]`) para derivar Program Derived Addresses (PDAs), garantindo um isolamento absoluto de estado para as contas.
+- **Security Invariants:** Todas as transições de estado são rigorosamente validadas utilizando `require!`. Operações financeiras fazem uso exclusivo de `checked_arithmetic` (prevenindo overflows/underflows).
+- **Rent Optimization:** Foco no ROI Técnico, otimizando os custos na Solana. Ao atingir estados terminais (conto `Completed` ou `Refunded`), as instruções invocam `close = payer`, encerrando a conta e devolvendo os lamports (rent) ao Payer.
+- **Milestone Logic:** Implementa uma soma em Basis Points (bps) como uma invariante global do protocolo. A soma de cada milestone deve atingir precisamente `10000 bps` (100%), garantindo uma matemática perfeita nos repasses.
 
 ---
 

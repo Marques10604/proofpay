@@ -11,6 +11,7 @@ pub mod proofpay {
     pub fn create_escrow(
         ctx: Context<CreateEscrow>,
         escrow_id: [u8; 32],
+        oracle: Pubkey,
         total_amount: u64,
         milestones: Vec<Milestone>,
         timeout_seconds: i64,
@@ -27,6 +28,7 @@ pub mod proofpay {
         escrow.escrow_id = escrow_id;
         escrow.payer = ctx.accounts.payer.key();
         escrow.payee = ctx.accounts.payee.key();
+        escrow.oracle = oracle;
         escrow.usdc_mint = ctx.accounts.usdc_mint.key(); // store accepted mint
         escrow.total_amount = total_amount;
         escrow.released_amount = 0;
@@ -206,6 +208,52 @@ pub mod proofpay {
 
         Ok(())
     }
+
+    /// Resolve a dispute — only the oracle can call this.
+    /// Closes the escrow and transfers remaining funds to either payee or payer.
+    pub fn resolve_dispute(ctx: Context<ResolveDispute>, release_to_payee: bool) -> Result<()> {
+        let escrow = &mut ctx.accounts.escrow;
+
+        // ── CHECKS ────────────────────────────────────────────────────────────
+        require!(escrow.state == EscrowState::Disputed, EscrowError::InvalidState);
+
+        // ── EFFECTS ───────────────────────────────────────────────────────────
+        let remaining = escrow.total_amount
+            .checked_sub(escrow.released_amount)
+            .ok_or(EscrowError::ArithmeticOverflow)?;
+
+        // ── INTERACTIONS ──────────────────────────────────────────────────────
+        let escrow_id = escrow.escrow_id;
+        let bump = escrow.bump;
+        let seeds = &[b"escrow", escrow_id.as_ref(), &[bump]];
+        let signer = &[&seeds[..]];
+
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.vault.to_account_info(),
+            to: if release_to_payee {
+                ctx.accounts.payee_token_account.to_account_info()
+            } else {
+                ctx.accounts.payer_token_account.to_account_info()
+            },
+            authority: escrow.to_account_info(),
+        };
+
+        token::transfer(
+            CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), cpi_accounts, signer),
+            remaining,
+        )?;
+
+        // The account is closed automatically via `close = payer`
+
+        emit!(DisputeResolved {
+            escrow_id: escrow.escrow_id,
+            resolved_by: ctx.accounts.oracle.key(),
+            release_to_payee,
+            amount: remaining,
+        });
+
+        Ok(())
+    }
 }
 
 // ─────────────────────────────────────────────
@@ -345,6 +393,38 @@ pub struct OpenDispute<'info> {
     pub invoker: Signer<'info>,
 }
 
+#[derive(Accounts)]
+pub struct ResolveDispute<'info> {
+    #[account(
+        mut,
+        close = payer,
+        has_one = payer,
+        has_one = payee,
+        has_one = oracle,
+        has_one = usdc_mint,
+    )]
+    pub escrow: Account<'info, EscrowAccount>,
+    pub oracle: Signer<'info>,
+    /// CHECK: Payer address merely to receive the `close = payer` lamports refund
+    #[account(mut)]
+    pub payer: UncheckedAccount<'info>,
+    /// CHECK: Target for token transfer if release_to_payee == true
+    #[account(mut)]
+    pub payee: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        token::mint = usdc_mint,
+        token::authority = escrow,
+    )]
+    pub vault: Account<'info, TokenAccount>,
+    #[account(mut, token::mint = usdc_mint)]
+    pub payee_token_account: Account<'info, TokenAccount>,
+    #[account(mut, token::mint = usdc_mint)]
+    pub payer_token_account: Account<'info, TokenAccount>,
+    pub usdc_mint: Account<'info, Mint>,
+    pub token_program: Program<'info, Token>,
+}
+
 // ─────────────────────────────────────────────
 // State
 // ─────────────────────────────────────────────
@@ -354,6 +434,7 @@ pub struct EscrowAccount {
     pub escrow_id: [u8; 32],
     pub payer: Pubkey,
     pub payee: Pubkey,
+    pub oracle: Pubkey,
     /// The accepted payment mint (USDC or USDG).
     /// Stored at creation so every future instruction can validate the vault mint
     /// via `has_one = usdc_mint` without trusting the client.
@@ -379,6 +460,7 @@ impl EscrowAccount {
     ///   escrow_id:        32
     ///   payer:            32
     ///   payee:            32
+    ///   oracle:           32
     ///   usdc_mint:        32  ← NEW (vault mint guard)
     ///   total_amount:      8
     ///   released_amount:   8
@@ -392,8 +474,8 @@ impl EscrowAccount {
     ///   disputed_by:       32
     ///   dispute_reason:   128
     pub const MAX_SIZE: usize =
-        32 + 32 + 32 + 32 + 8 + 8 + (4 + 10 * Milestone::SIZE) + 1 + 1 + 8 + 8 + 1
-        + 8 + 32 + 128; // +32 = usdc_mint field
+        32 + 32 + 32 + 32 + 32 + 8 + 8 + (4 + 10 * Milestone::SIZE) + 1 + 1 + 8 + 8 + 1
+        + 8 + 32 + 128; // +32 = oracle, +32 = usdc_mint field
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
@@ -451,6 +533,14 @@ pub struct DisputeOpened {
     pub escrow_id: [u8; 32],
     pub disputed_by: Pubkey,  // payer or payee
     pub timestamp: i64,
+}
+
+#[event]
+pub struct DisputeResolved {
+    pub escrow_id: [u8; 32],
+    pub resolved_by: Pubkey,
+    pub release_to_payee: bool,
+    pub amount: u64,
 }
 
 // ─────────────────────────────────────────────
