@@ -62,6 +62,7 @@ const TIMEOUT_7_DAYS = new BN(7 * 24 * 3600);
  * InvalidState is index 0 → 6000.
  */
 const ERR_INVALID_STATE = 6000;
+const ERR_UNAUTHORIZED = 6001;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -578,6 +579,168 @@ describe("ProofPay Escrow Protocol", () => {
           "expected transaction to fail for unauthorized invoker"
         );
       }
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Suite 4 — Dispute Resolution
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("Suite 4 — Dispute Resolution", () => {
+    const escrowId = randomEscrowId();
+    let escrowAddress: PublicKey;
+    let vault: PublicKey;
+    const oracle = Keypair.generate();
+
+    const milestones = [
+      {
+        description: encodeBytes("Dispute test milestone", 64),
+        releaseBps: 10000,
+      },
+    ];
+
+    before("setup escrow PDA + vault for dispute resolution test", async () => {
+      [escrowAddress] = await escrowPDA(escrowId, program.programId);
+      vault = await createAccount(provider.connection, payer, usdcMint, escrowAddress);
+
+      await provider.connection.confirmTransaction(
+        await provider.connection.requestAirdrop(oracle.publicKey, LAMPORTS_PER_SOL)
+      );
+    });
+
+    it("setup: create, fund, and test resolve_dispute in Funded state -> InvalidState (6000)", async () => {
+      await program.methods
+        .createEscrow(
+          Array.from(escrowId),
+          oracle.publicKey,
+          new BN(ESCROW_AMOUNT),
+          milestones,
+          TIMEOUT_7_DAYS
+        )
+        .accounts({
+          escrow: escrowAddress,
+          payer: payer.publicKey,
+          payee: payee.publicKey,
+          usdcMint,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([payer])
+        .rpc();
+
+      await program.methods
+        .fundEscrow(new BN(ESCROW_AMOUNT))
+        .accounts({
+          escrow: escrowAddress,
+          payer: payer.publicKey,
+          payerTokenAccount,
+          vault,
+          usdcMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([payer])
+        .rpc();
+
+      // Teste de segurança: tentar resolver sem estar em Disputed
+      const resolveAttempt = program.methods
+        .resolveDispute(true)
+        .accounts({
+          escrow: escrowAddress,
+          oracle: oracle.publicKey,
+          payer: payer.publicKey,
+          payee: payee.publicKey,
+          vault,
+          payeeTokenAccount,
+          payerTokenAccount,
+          usdcMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([oracle])
+        .rpc();
+
+      await assertAnchorError(
+        resolveAttempt,
+        ERR_INVALID_STATE,
+        "resolve_dispute in Funded state"
+      );
+    });
+
+    it("setup: open_dispute to freeze funds", async () => {
+      await program.methods
+        .openDispute(encodeBytes("Dispute for oracle resolution", 128))
+        .accounts({
+          escrow: escrowAddress,
+          invoker: payer.publicKey,
+        })
+        .signers([payer])
+        .rpc();
+
+      const on_chain = await sdkClient.getEscrow(escrowId);
+      assert.equal(on_chain!.state, "disputed", "state should be 'disputed'");
+    });
+
+    it("🔒 resolve_dispute MUST revert if called by non-oracle -> Unauthorized (6001)", async () => {
+      const attacker = Keypair.generate();
+      await provider.connection.confirmTransaction(
+        await provider.connection.requestAirdrop(attacker.publicKey, LAMPORTS_PER_SOL)
+      );
+
+      const resolveAttempt = program.methods
+        .resolveDispute(true)
+        .accounts({
+          escrow: escrowAddress,
+          oracle: attacker.publicKey,
+          payer: payer.publicKey,
+          payee: payee.publicKey,
+          vault,
+          payeeTokenAccount,
+          payerTokenAccount,
+          usdcMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([attacker])
+        .rpc();
+
+      await assertAnchorError(
+        resolveAttempt,
+        ERR_UNAUTHORIZED,
+        "resolve_dispute by non-oracle"
+      );
+    });
+
+    it("resolve_dispute (Happy path) — oracle releases funds to payee", async () => {
+      const payeeBalBefore = Number(
+        (await getAccount(provider.connection, payeeTokenAccount)).amount
+      );
+
+      await program.methods
+        .resolveDispute(true) // release_to_payee = true
+        .accounts({
+          escrow: escrowAddress,
+          oracle: oracle.publicKey,
+          payer: payer.publicKey,
+          payee: payee.publicKey,
+          vault,
+          payeeTokenAccount,
+          payerTokenAccount,
+          usdcMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([oracle])
+        .rpc();
+
+      const payeeBalAfter = Number(
+        (await getAccount(provider.connection, payeeTokenAccount)).amount
+      );
+
+      assert.equal(
+        payeeBalAfter - payeeBalBefore,
+        ESCROW_AMOUNT,
+        "payee should receive the full remaining amount"
+      );
+
+      // Verify PDA is closed
+      const closedInfo = await provider.connection.getAccountInfo(escrowAddress);
+      assert.isNull(closedInfo, "escrow PDA should be closed after resolve_dispute");
     });
   });
 });
