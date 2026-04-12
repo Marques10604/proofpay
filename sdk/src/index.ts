@@ -15,8 +15,9 @@
  * ```
  */
 
-import { Connection, PublicKey } from "@solana/web3.js";
+import { Connection, PublicKey, Keypair } from "@solana/web3.js";
 import { Program, AnchorProvider, BN, Idl } from "@coral-xyz/anchor";
+import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Inline IDL
@@ -39,6 +40,7 @@ const PROOFPAY_IDL: Idl = {
       ],
       args: [
         { name: "escrowId", type: { array: ["u8", 32] } },
+        { name: "oracle", type: "publicKey" },
         { name: "totalAmount", type: "u64" },
         { name: "milestones", type: { vec: { defined: "Milestone" } } },
         { name: "timeoutSeconds", type: "i64" },
@@ -89,6 +91,21 @@ const PROOFPAY_IDL: Idl = {
       ],
       args: [{ name: "reason", type: { array: ["u8", 128] } }],
     },
+    {
+      name: "resolveDispute",
+      accounts: [
+        { name: "escrow", isMut: true, isSigner: false },
+        { name: "oracle", isMut: false, isSigner: true },
+        { name: "payer", isMut: true, isSigner: false },
+        { name: "payee", isMut: true, isSigner: false },
+        { name: "vault", isMut: true, isSigner: false },
+        { name: "payeeTokenAccount", isMut: true, isSigner: false },
+        { name: "payerTokenAccount", isMut: true, isSigner: false },
+        { name: "usdcMint", isMut: false, isSigner: false },
+        { name: "tokenProgram", isMut: false, isSigner: false },
+      ],
+      args: [{ name: "releaseToPayee", type: "bool" }],
+    },
   ],
   accounts: [
     {
@@ -111,6 +128,7 @@ const PROOFPAY_IDL: Idl = {
           { name: "disputedAt",      type: "i64" },
           { name: "disputedBy",      type: "publicKey" },
           { name: "disputeReason",   type: { array: ["u8", 128] } },
+          { name: "oracle",          type: "publicKey" },
         ],
       },
     },
@@ -251,6 +269,7 @@ export interface EscrowMilestone {
 export interface CreateEscrowParams {
   payee: PublicKey;
   usdcMint: PublicKey;
+  oracle: PublicKey;
   /** Total amount in USDC lamports (6 decimals) */
   amount: number;
   milestones: Array<{
@@ -259,6 +278,12 @@ export interface CreateEscrowParams {
     releasePercent: number;
   }>;
   timeoutDays?: number;
+}
+
+export interface ResolveDisputeParams {
+  escrowId: Uint8Array;
+  releaseToPayee: boolean;
+  oracleKeypair: Keypair;
 }
 
 /**
@@ -469,6 +494,74 @@ export class ProofPayClient {
   /** Access the underlying Connection for advanced use cases. */
   getConnection(): Connection {
     return this.connection;
+  }
+
+  /**
+   * Create a new escrow agreement.
+   * As directly requested, the 'oracle' is in params and (if it was part of accounts in your specific fork) it is passed to .accounts() here.
+   * However, under standard ProofPay IDL it's passed as an argument. I will pass it as an arg as required by the IDL schema.
+   */
+  async createEscrow(
+    escrowId: Uint8Array,
+    params: CreateEscrowParams
+  ): Promise<string> {
+    const program = this.getProgram();
+    const [pda] = await this.getEscrowPDA(escrowId);
+
+    const milestones = params.milestones.map((m) => ({
+      description: Array.from(new Uint8Array(encodeBytes(m.description, 64))),
+      releaseBps: Math.floor(m.releasePercent * 100),
+    }));
+
+    // If oracle was somehow required in accounts, it could go to accounts() but based on Rust standard IDL it's an arg.
+    return program.methods
+      .createEscrow(
+        Array.from(escrowId),
+        params.oracle,
+        new BN(params.amount),
+        milestones,
+        new BN(params.timeoutDays ? params.timeoutDays * 86400 : 30 * 86400)
+      )
+      .accounts({
+        escrow: pda,
+        payer: program.provider.publicKey!,
+        payee: params.payee,
+        usdcMint: params.usdcMint,
+        systemProgram: PublicKey.default, // Using default SystemProgram ID if not specifically imported
+        oracle: params.oracle,
+      } as any)
+      .rpc();
+  }
+
+  /**
+   * Resolve a dispute. The oracle validates and finalizes the funds distributed.
+   */
+  async resolveDispute(params: ResolveDisputeParams): Promise<string> {
+    const program = this.getProgram();
+    const escrow = await this.getEscrow(params.escrowId);
+    if (!escrow) throw new Error("Escrow not found");
+
+    const [pda] = await this.getEscrowPDA(params.escrowId);
+
+    const vault = getAssociatedTokenAddressSync(escrow.usdcMint, pda, true);
+    const payeeTokenAccount = getAssociatedTokenAddressSync(escrow.usdcMint, escrow.payee);
+    const payerTokenAccount = getAssociatedTokenAddressSync(escrow.usdcMint, escrow.payer);
+
+    return program.methods
+      .resolveDispute(params.releaseToPayee)
+      .accounts({
+        escrow: pda,
+        oracle: params.oracleKeypair.publicKey,
+        payer: escrow.payer,
+        payee: escrow.payee,
+        vault,
+        payeeTokenAccount,
+        payerTokenAccount,
+        usdcMint: escrow.usdcMint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      } as any)
+      .signers([params.oracleKeypair])
+      .rpc();
   }
 }
 
