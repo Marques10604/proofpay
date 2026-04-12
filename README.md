@@ -10,6 +10,18 @@
 
 ---
 
+## 🏃‍♂️ Quick Start
+
+Run the protocol and frontend locally:
+
+```bash
+anchor build
+anchor test
+cd app && npm run dev
+```
+
+---
+
 ## 🧩 What is ProofPay?
 
 ProofPay is a **trustless B2B escrow protocol** built on Solana that combines two core innovations:
