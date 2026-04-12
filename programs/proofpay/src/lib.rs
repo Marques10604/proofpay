@@ -223,6 +223,11 @@ pub mod proofpay {
             .checked_sub(escrow.released_amount)
             .ok_or(EscrowError::ArithmeticOverflow)?;
 
+        // Update reputation score (Resolution Reputation Score)
+        ctx.accounts.reputation.resolved_disputes = ctx.accounts.reputation.resolved_disputes
+            .checked_add(1)
+            .ok_or(EscrowError::ArithmeticOverflow)?;
+
         // ── INTERACTIONS ──────────────────────────────────────────────────────
         let escrow_id = escrow.escrow_id;
         let bump = escrow.bump;
@@ -293,6 +298,20 @@ pub mod proofpay {
         });
 
         Ok(())
+    }
+
+    pub fn init_oracle_reputation(ctx: Context<InitOracleReputation>) -> Result<()> {
+        let reputation = &mut ctx.accounts.reputation;
+        reputation.oracle = ctx.accounts.oracle.key();
+        reputation.resolved_disputes = 0;
+        reputation.bump = ctx.bumps.reputation;
+        Ok(())
+    }
+
+    pub fn get_oracle_reputation(ctx: Context<GetOracleReputation>) -> Result<u64> {
+        let count = ctx.accounts.reputation.resolved_disputes;
+        msg!("Oracle {} has resolved {} disputes", ctx.accounts.oracle.key(), count);
+        Ok(count)
     }
 }
 
@@ -410,12 +429,6 @@ pub struct RefundOnTimeout<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-/// Accounts for `open_dispute`.
-///
-/// Security: The `constraint` below enforces at the account-validation layer
-/// (before instruction logic runs) that the signer is either payer or payee.
-/// This is the Anchor-idiomatic pattern — account constraints are checked by
-/// the framework before the instruction function body executes.
 #[derive(Accounts)]
 pub struct OpenDispute<'info> {
     #[account(
@@ -434,6 +447,34 @@ pub struct OpenDispute<'info> {
 }
 
 #[derive(Accounts)]
+pub struct InitOracleReputation<'info> {
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + OracleReputation::SIZE,
+        seeds = [b"reputation", oracle.key().as_ref()],
+        bump
+    )]
+    pub reputation: Account<'info, OracleReputation>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    /// CHECK: The oracle being initialized
+    pub oracle: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct GetOracleReputation<'info> {
+    #[account(
+        seeds = [b"reputation", oracle.key().as_ref()],
+        bump = reputation.bump,
+    )]
+    pub reputation: Account<'info, OracleReputation>,
+    /// CHECK: The oracle address to check
+    pub oracle: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
 pub struct ResolveDispute<'info> {
     #[account(
         mut,
@@ -444,6 +485,12 @@ pub struct ResolveDispute<'info> {
         has_one = usdc_mint,
     )]
     pub escrow: Account<'info, EscrowAccount>,
+    #[account(
+        mut,
+        seeds = [b"reputation", oracle.key().as_ref()],
+        bump = reputation.bump,
+    )]
+    pub reputation: Account<'info, OracleReputation>,
     pub oracle: Signer<'info>,
     /// CHECK: Payer address merely to receive the `close = payer` lamports refund
     #[account(mut)]
@@ -636,4 +683,15 @@ pub enum EscrowError {
     WrongMint,
     #[msg("Arithmetic overflow or underflow in amount calculation")]
     ArithmeticOverflow,
+}
+
+#[account]
+pub struct OracleReputation {
+    pub oracle: Pubkey,
+    pub resolved_disputes: u64,
+    pub bump: u8,
+}
+
+impl OracleReputation {
+    pub const SIZE: usize = 32 + 8 + 1;
 }
