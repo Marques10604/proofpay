@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, ShieldAlert, Cpu, TerminalSquare } from 'lucide-react';
-import { ProofPayClient, EscrowAccount } from '@proofpay/sdk';
-import { PublicKey, Keypair } from '@solana/web3.js';
+import { ProofPayClient, EscrowAccount } from '../../sdk/src/index';
+import { Keypair } from '@solana/web3.js';
 import './index.css';
 
-// Mock Provider for UI purposes since we don't have a wallet adapter setup yet
-const dummyClient = new ProofPayClient({ network: 'devnet' });
+// Initialize the client so it's not unsused
+const client = new ProofPayClient({ network: 'devnet' });
 
 export default function App() {
   const [escrows, setEscrows] = useState<EscrowAccount[]>([]);
@@ -58,12 +58,12 @@ export default function App() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Creating escrow via ProofPayClient...", form);
+    console.log("Creating escrow via ProofPayClient...", form, client);
     alert("SYS_MSG: Escrow Creation Triggered // " + form.amount + " USDC");
   };
 
   const handleDispute = (escrow: EscrowAccount) => {
-    console.log("Triggering dispute via ProofPayClient...", escrow.escrowId);
+    console.log("Triggering dispute via ProofPayClient...", escrow.escrowId, client);
     alert("SYS_MSG: Opening Dispute // ORACLE INTERVENTION REQUIRED");
   };
 
@@ -140,7 +140,7 @@ export default function App() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Cpu size={16} color="var(--term-dim)" />
                   <span style={{ fontFamily: 'monospace', color: 'var(--term-dim)' }}>
-                    ID: {Array.from(escrow.escrowId.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('')}...
+                    ID: {Array.from(escrow.escrowId.slice(0, 8)).map((b: number) => b.toString(16).padStart(2, '0')).join('')}...
                   </span>
                 </div>
                 <span className={`badge ${escrow.state}`}>[{escrow.state}]</span>
