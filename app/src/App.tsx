@@ -1,14 +1,42 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Shield, ShieldAlert, Cpu, TerminalSquare } from 'lucide-react';
-import { ProofPayClient, EscrowAccount } from '../../sdk/src/index';
-import { Keypair } from '@solana/web3.js';
 import './index.css';
 
-// Initialize the client so it's not unsused
-const client = new ProofPayClient({ network: 'devnet' });
+// --- MOCK INTERFACES (Pure React, no Node/Solana dependencies) ---
+
+type EscrowState = 'funded' | 'disputed' | 'completed';
+
+interface MockEscrow {
+  id: string;
+  payer: string;
+  payee: string;
+  amount: string;
+  milestone: string;
+  state: EscrowState;
+  disputeReason?: string;
+}
 
 export default function App() {
-  const [escrows, setEscrows] = useState<EscrowAccount[]>([]);
+  const [escrows, setEscrows] = useState<MockEscrow[]>([
+    {
+      id: 'e82a91f0',
+      payer: 'Payer_Wallet_01',
+      payee: 'Dev_Studio_X',
+      amount: '5000',
+      milestone: 'Protocol Architecture',
+      state: 'funded'
+    },
+    {
+      id: 'fa91c83d',
+      payer: 'Payer_Wallet_02',
+      payee: 'Audit_Firm_Alpha',
+      amount: '12000',
+      milestone: 'Smart Contract Security Audit',
+      state: 'disputed',
+      disputeReason: 'Payee failed to deliver audit report on time'
+    }
+  ]);
+
   const [form, setForm] = useState({
     amount: '',
     payee: '',
@@ -16,55 +44,28 @@ export default function App() {
     milestoneDesc: '',
   });
 
-  // Dummy escrow data for the UI so we can see the designed states
-  useEffect(() => {
-    setEscrows([
-      {
-        escrowId: new Uint8Array(32),
-        payer: Keypair.generate().publicKey,
-        payee: Keypair.generate().publicKey,
-        usdcMint: Keypair.generate().publicKey,
-        totalAmount: 5000n,
-        releasedAmount: 0n,
-        milestones: [{ description: 'Frontend Layout', releaseBps: 10000 }],
-        currentMilestone: 0,
-        state: 'funded',
-        createdAt: new Date(),
-        timeoutAt: new Date(),
-        bump: 255,
-        disputedAt: null,
-        disputedBy: null,
-        disputeReason: ''
-      },
-      {
-        escrowId: new Uint8Array(32),
-        payer: Keypair.generate().publicKey,
-        payee: Keypair.generate().publicKey,
-        usdcMint: Keypair.generate().publicKey,
-        totalAmount: 12000n,
-        releasedAmount: 0n,
-        milestones: [{ description: 'Smart Contract Audit', releaseBps: 10000 }],
-        currentMilestone: 0,
-        state: 'disputed',
-        createdAt: new Date(),
-        timeoutAt: new Date(),
-        bump: 255,
-        disputedAt: new Date(),
-        disputedBy: Keypair.generate().publicKey,
-        disputeReason: 'Payee failed to deliver audit report on time'
-      }
-    ]);
-  }, []);
-
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Creating escrow via ProofPayClient...", form, client);
-    alert("SYS_MSG: Escrow Creation Triggered // " + form.amount + " USDC");
+    const newEscrow: MockEscrow = {
+      id: Math.random().toString(16).slice(2, 10),
+      payer: 'Current_User_Wallet',
+      payee: form.payee,
+      amount: form.amount,
+      milestone: form.milestoneDesc,
+      state: 'funded'
+    };
+    setEscrows([newEscrow, ...escrows]);
+    setForm({ amount: '', payee: '', oracle: '', milestoneDesc: '' });
+    alert(`SYS_MSG: Escrow ${newEscrow.id} Created Successfully`);
   };
 
-  const handleDispute = (escrow: EscrowAccount) => {
-    console.log("Triggering dispute via ProofPayClient...", escrow.escrowId, client);
-    alert("SYS_MSG: Opening Dispute // ORACLE INTERVENTION REQUIRED");
+  const handleDispute = (id: string) => {
+    setEscrows(escrows.map(esc => 
+      esc.id === id 
+        ? { ...esc, state: 'disputed', disputeReason: 'Manual dispute opened by user intervention' } 
+        : esc
+    ));
+    alert("SYS_MSG: DISPUTE_ID_" + id + "__INITIALIZED");
   };
 
   return (
@@ -75,7 +76,7 @@ export default function App() {
           <strong style={{ fontSize: '1.2rem', letterSpacing: '2px' }}>PROOFPAY_INFRA</strong>
         </div>
         <div className="system-status">
-          <span className="blink">●</span> NETWORK_CONNECTED [DEVNET]
+          <span className="blink">●</span> SIMULATED_ENVIRONMENT [MOCK_MODE]
         </div>
       </div>
 
@@ -95,10 +96,10 @@ export default function App() {
             </div>
             
             <div className="form-group">
-              <label>Payee PublicKey</label>
+              <label>Payee PublicKey / Identifier</label>
               <input 
                 type="text" 
-                placeholder="Ex: 5rUL..." 
+                placeholder="Ex: 0x... or WalletID" 
                 value={form.payee} 
                 onChange={e => setForm({...form, payee: e.target.value})} 
                 required 
@@ -106,10 +107,10 @@ export default function App() {
             </div>
 
             <div className="form-group">
-              <label>Oracle Address</label>
+              <label>Oracle Agent ID</label>
               <input 
                 type="text" 
-                placeholder="Ex: AI_Oracle_ID" 
+                placeholder="Ex: PROOF_ORACLE_01" 
                 value={form.oracle} 
                 onChange={e => setForm({...form, oracle: e.target.value})} 
                 required 
@@ -117,62 +118,62 @@ export default function App() {
             </div>
 
             <div className="form-group">
-              <label>Milestone 1 Description</label>
+              <label>Milestone Definition</label>
               <input 
                 type="text" 
-                placeholder="Ex: Delivery of phase 1" 
+                placeholder="Ex: API Implementation" 
                 value={form.milestoneDesc} 
                 onChange={e => setForm({...form, milestoneDesc: e.target.value})} 
                 required 
               />
             </div>
 
-            <button type="submit" className="primary">Execute Transaction</button>
+            <button type="submit" className="primary">Initialize Contract</button>
           </form>
         </div>
 
         <div className="panel" style={{ borderRight: 'none' }}>
-          <h2>ACTIVE_CONTRACTS</h2>
+          <h2>MONITOR_VIRTUAL_LEDGER</h2>
           
-          {escrows.map((escrow, i) => (
-            <div key={i} className={`escrow-card ${escrow.state}`}>
+          {escrows.map((escrow) => (
+            <div key={escrow.id} className={`escrow-card ${escrow.state}`}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Cpu size={16} color="var(--term-dim)" />
                   <span style={{ fontFamily: 'monospace', color: 'var(--term-dim)' }}>
-                    ID: {Array.from(escrow.escrowId.slice(0, 8)).map((b: number) => b.toString(16).padStart(2, '0')).join('')}...
+                    REF_ID: {escrow.id}
                   </span>
                 </div>
                 <span className={`badge ${escrow.state}`}>[{escrow.state}]</span>
               </div>
 
               <div className="data-row">
-                <span>TOTAL_AMOUNT</span>
-                <span>{escrow.totalAmount.toString()} USDC</span>
+                <span>LIQUIDITY</span>
+                <span>{escrow.amount} USDC</span>
               </div>
               <div className="data-row">
-                <span>PAYEE</span>
-                <span>{escrow.payee.toBase58().substring(0, 8)}...</span>
+                <span>RECIPIENT</span>
+                <span>{escrow.payee}</span>
               </div>
               <div className="data-row">
-                <span>MILESTONE_1</span>
-                <span>{escrow.milestones[0]?.description}</span>
+                <span>CURRENT_GOAL</span>
+                <span>{escrow.milestone}</span>
               </div>
 
               {escrow.state === 'disputed' && (
                 <div style={{ marginTop: '16px', padding: '12px', border: '1px solid var(--term-alert)', color: 'var(--term-alert)', fontSize: '0.85rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                    <ShieldAlert size={16} /> <strong>DISPUTE_ACTIVE</strong>
+                    <ShieldAlert size={16} /> <strong>ASSERTION_FAILURE</strong>
                   </div>
-                  <div>REASON: {escrow.disputeReason}</div>
+                  <div style={{ opacity: 0.8 }}>TRACELOG: {escrow.disputeReason}</div>
                 </div>
               )}
 
-              {escrow.state !== 'disputed' && escrow.state !== 'completed' && (
+              {escrow.state === 'funded' && (
                 <div style={{ marginTop: '16px' }}>
-                  <button className="danger" onClick={() => handleDispute(escrow)}>
+                  <button className="danger" onClick={() => handleDispute(escrow.id)}>
                     <TerminalSquare size={16} style={{ display: 'inline', marginRight: '8px', verticalAlign: 'middle' }} />
-                    Command: Open Dispute
+                    Command: Signal Dispute
                   </button>
                 </div>
               )}
@@ -181,7 +182,7 @@ export default function App() {
 
           {escrows.length === 0 && (
             <div style={{ color: 'var(--term-dim)', textAlign: 'center', padding: '40px' }}>
-              NO_ACTIVE_CONTRACTS_FOUND
+              EMPTY_LEDGER
             </div>
           )}
         </div>
