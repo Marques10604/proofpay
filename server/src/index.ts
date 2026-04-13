@@ -11,15 +11,22 @@ const app = new Hono();
 // 8. Adicionar middleware CORS para aceitar requests de qualquer origem
 app.use('/*', cors());
 
+import { createClient } from '@supabase/supabase-js';
+
 // 9. Processar variáveis de ambiente
 const ORACLE_PRIVATE_KEY = process.env.ORACLE_PRIVATE_KEY;
 const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL || 'https://api.devnet.solana.com';
 const ORACLE_WALLET_ADDRESS = process.env.ORACLE_WALLET_ADDRESS;
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
 if (!ORACLE_PRIVATE_KEY || !ORACLE_WALLET_ADDRESS) {
   console.error("Missing required environment variables: ORACLE_PRIVATE_KEY or ORACLE_WALLET_ADDRESS");
   process.exit(1);
 }
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Inicializar configuração Solana
 let oracleKeypair: Keypair;
@@ -54,6 +61,96 @@ class NodeWallet implements Wallet {
 const wallet = new NodeWallet(oracleKeypair);
 const provider = new AnchorProvider(connection, wallet as any, { commitment: 'confirmed' });
 const client = new ProofPayClient({ rpcUrl: SOLANA_RPC_URL, provider });
+
+// Health Check
+app.get('/health', (c) => c.json({ status: 'ok', timestamp: Date.now() }));
+
+// Oracle Evaluate Endpoint
+app.post('/oracle/evaluate', async (c) => {
+  const body = await c.req.json();
+  const { escrow_id, evidence, escrow_pda } = body;
+
+  if (!escrow_id || !evidence || !escrow_pda) {
+    return c.json({ error: "escrow_id, evidence and escrow_pda are required" }, 400);
+  }
+
+  // AI Decision via Claude
+  let aiDecision: { decision: 'approve' | 'reject'; confidence: number; reason: string };
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": ANTHROPIC_API_KEY || "",
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "claude-3-5-haiku-20241022", // Use a valid manifest name if needed
+        max_tokens: 1024,
+        messages: [{
+          role: "user",
+          content: `You are a B2B payment arbitrator. Based on this evidence, should the milestone payment be released?
+Evidence: ${evidence}
+Respond ONLY with JSON: {decision: 'approve'|'reject', confidence: 0-100, reason: string}`
+        }]
+      })
+    });
+
+    const completion = await response.json() as any;
+    const content = completion.content[0].text;
+    aiDecision = JSON.parse(content);
+  } catch (e) {
+    console.error("AI Decision failed", e);
+    return c.json({ error: "AI Arbitration failed" }, 500);
+  }
+
+  if (aiDecision.decision === 'approve') {
+    try {
+      // Formatar array de bytes do escrow_id
+      const escrowIdBytes = Array.isArray(escrow_id) 
+        ? new Uint8Array(escrow_id) 
+        : new Uint8Array(Object.values(escrow_id));
+
+      const txid = await client.resolveDispute({
+        escrowId: escrowIdBytes,
+        releaseToPayee: true,
+        oracleKeypair: oracleKeypair
+      });
+
+      await supabase.from("oracle_decisions").insert({
+        escrow_pda,
+        decision: 'approve',
+        confidence: aiDecision.confidence,
+        reason: aiDecision.reason,
+        tx_signature: txid
+      });
+
+      return c.json({ status: "success", decision: "approve", txid });
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
+  } else {
+    // Decision is reject
+    await supabase.from("oracle_decisions").insert({
+      escrow_pda,
+      decision: 'reject',
+      confidence: aiDecision.confidence,
+      reason: aiDecision.reason,
+      status: 'pending_human_review'
+    });
+
+    return c.json({ status: "rejected", reason: aiDecision.reason }, 402, {
+      'X-PAYMENT-REQUIRED': JSON.stringify({
+        price: "10",
+        currency: "USDC",
+        scheme: "exact",
+        network: "solana",
+        payTo: ORACLE_WALLET_ADDRESS,
+        resource: "dispute_appeal"
+      })
+    });
+  }
+});
 
 // 1. Rota POST /resolve
 app.post('/resolve', async (c) => {

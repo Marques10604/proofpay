@@ -4,7 +4,8 @@
   "private": true,
   "workspaces": [
     "sdk",
-    "app"
+    "app",
+    "server"
   ],
   "scripts": {
     "build:sdk": "npm run build -w sdk",
