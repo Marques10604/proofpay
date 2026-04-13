@@ -4,10 +4,10 @@ solana-version = "1.18.0"
 type = "anchor"
 
 [programs.localnet]
-proofpay = "5rULicy7hRi91KADEB1J4kgPtezJHgM96WM7pXCYNYFY"
+proofpay = "FpN5kH3w6kVLDEHz1zUfSof2n2QfMKfENCE97LMiut6i"
 
 [programs.devnet]
-proofpay = "5rULicy7hRi91KADEB1J4kgPtezJHgM96WM7pXCYNYFY"
+proofpay = "FpN5kH3w6kVLDEHz1zUfSof2n2QfMKfENCE97LMiut6i"
 
 [registry]
 url = "https://api.apr.dev"

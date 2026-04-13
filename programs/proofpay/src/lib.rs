@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
-declare_id!("5rULicy7hRi91KADEB1J4kgPtezJHgM96WM7pXCYNYFY");
+declare_id!("FpN5kH3w6kVLDEHz1zUfSof2n2QfMKfENCE97LMiut6i");
 
 #[program]
 pub mod proofpay {

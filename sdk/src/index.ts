@@ -412,7 +412,7 @@ export class ProofPayClient {
 
     this.connection = new Connection(rpcUrl, "confirmed");
     this.programId  = new PublicKey(
-      config.programId ?? "5rULicy7hRi91KADEB1J4kgPtezJHgM96WM7pXCYNYFY"
+      config.programId ?? "FpN5kH3w6kVLDEHz1zUfSof2n2QfMKfENCE97LMiut6i"
     );
 
     // If a provider is supplied, initialize the Anchor program for read+write

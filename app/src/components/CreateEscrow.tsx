@@ -17,7 +17,7 @@ import {
 import { toast } from "sonner";
 import { Buffer } from "buffer";
 
-const PROGRAM_ID = new PublicKey("5rULicy7hRi91KADEB1J4kgPtezJHgM96WM7pXCYNYFY");
+const PROGRAM_ID = new PublicKey("FpN5kH3w6kVLDEHz1zUfSof2n2QfMKfENCE97LMiut6i");
 const DEVNET_USDC = new PublicKey("Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr");
 
 // Discriminator: sha256("global:create_escrow").slice(0, 8)
