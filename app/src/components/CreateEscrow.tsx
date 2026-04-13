@@ -1,18 +1,26 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/lib/LanguageContext";
-import { useConnection, useAnchorWallet } from "@solana/wallet-adapter-react";
-import { AnchorProvider } from "@coral-xyz/anchor";
-import { PublicKey } from "@solana/web3.js";
-import { ProofPayClient } from "@proofpay/sdk";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { 
+  PublicKey, 
+  Transaction, 
+  TransactionInstruction, 
+  SystemProgram 
+} from "@solana/web3.js";
 import { toast } from "sonner";
+import { Buffer } from "buffer";
 
+const PROGRAM_ID = new PublicKey("5rULicy7hRi91KADEB1J4kgPtezJHgM96WM7pXCYNYFY");
 const DEVNET_USDC = new PublicKey("4zMMC9srt5Ri5Z14GAgXBYHtdGY9AFEz4ztSYZ6yWk7");
+
+// Discriminator: sha256("global:create_escrow").slice(0, 8)
+const CREATE_ESCROW_DISCRIMINATOR = Buffer.from([170, 114, 219, 13, 246, 203, 102, 19]);
 
 const CreateEscrow = () => {
   const { t } = useLanguage();
   const { connection } = useConnection();
-  const wallet = useAnchorWallet();
+  const { publicKey, signTransaction } = useWallet();
   const [loading, setLoading] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
@@ -31,13 +39,11 @@ const CreateEscrow = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // R6: Critical hardening - Ensure wallet is fully connected and ready
-    if (!wallet || !wallet.publicKey) {
-      toast.error("Please connect your Solana wallet first");
+    if (!publicKey || !signTransaction) {
+      toast.error("Please connect your wallet");
       return;
     }
 
-    // Basic input validation
     if (!form.payee || !form.oracle || !form.amount) {
       toast.error("Please fill in all mandatory fields");
       return;
@@ -46,43 +52,60 @@ const CreateEscrow = () => {
     try {
       setLoading(true);
       
-      // Instantiate provider AND client strictly inside the handler
-      const provider = new AnchorProvider(
-        connection, 
-        wallet, 
-        AnchorProvider.defaultOptions()
-      );
-      
-      const client = new ProofPayClient({ provider });
-
       // Generate random 32-byte identity for escrow
       const escrowId = window.crypto.getRandomValues(new Uint8Array(32));
 
-      // Validate addresses before creating PublicKeys
-      let payeePubkey, oraclePubkey;
-      try {
-        payeePubkey = new PublicKey(form.payee);
-        oraclePubkey = new PublicKey(form.oracle);
-      } catch (err) {
-        throw new Error("Invalid Solana address for Payer or Oracle");
-      }
+      // Derive PDA: ["escrow", escrowId]
+      const [escrowPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("escrow"), Buffer.from(escrowId)],
+        PROGRAM_ID
+      );
 
-      const params = {
-        payee: payeePubkey,
-        usdcMint: DEVNET_USDC,
-        oracle: oraclePubkey,
-        amount: Math.floor(parseFloat(form.amount) * 1_000_000), // Ensure integer u64
-        milestones: [
-          {
-            description: form.milestone || "Deliverable 1",
-            releasePercent: 100,
-          },
+      // Parse inputs
+      const payeePubkey = new PublicKey(form.payee);
+      const oraclePubkey = new PublicKey(form.oracle);
+      const amount = BigInt(Math.floor(parseFloat(form.amount) * 1_000_000));
+      const timeoutSeconds = BigInt((parseInt(form.timeout) || 30) * 86400);
+
+      // Data Layout (Manual Borsh-ish for Anchor)
+      // Disc(8) + escrowId(32) + oracle(32) + amount(8) + vec_len(4) + milestones(66) + timeout(8) = 158 bytes
+      const milestoneDesc = Buffer.alloc(64);
+      milestoneDesc.write(form.milestone || "Deliverable 1");
+      
+      const data = Buffer.alloc(158);
+      let offset = 0;
+      CREATE_ESCROW_DISCRIMINATOR.copy(data, offset); offset += 8;
+      Buffer.from(escrowId).copy(data, offset); offset += 32;
+      oraclePubkey.toBuffer().copy(data, offset); offset += 32;
+      data.writeBigUInt64LE(amount, offset); offset += 8;
+      data.writeUInt32LE(1, offset); offset += 4; // milestones_len=1
+      milestoneDesc.copy(data, offset); offset += 64;
+      data.writeUInt16LE(10000, offset); offset += 2; // 100% in basis points
+      data.writeBigInt64LE(timeoutSeconds, offset); offset += 8;
+
+      const instruction = new TransactionInstruction({
+        keys: [
+          { pubkey: escrowPda, isSigner: false, isMut: true },
+          { pubkey: publicKey, isSigner: true, isMut: true },
+          { pubkey: payeePubkey, isSigner: false, isMut: false },
+          { pubkey: DEVNET_USDC, isSigner: false, isMut: false },
+          { pubkey: SystemProgram.programId, isSigner: false, isMut: false },
+          // Oracle is usually an arg, but if accounts are mapped by the user requirement:
+          { pubkey: oraclePubkey, isSigner: false, isMut: false },
         ],
-        timeoutDays: parseInt(form.timeout) || 30,
-      };
+        programId: PROGRAM_ID,
+        data: data,
+      });
 
-      const tx = await client.createEscrow(escrowId, params);
-      setTxHash(tx);
+      const transaction = new Transaction().add(instruction);
+      const { blockhash } = await connection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = publicKey;
+
+      const signed = await signTransaction(transaction);
+      const txid = await connection.sendRawTransaction(signed.serialize());
+      
+      setTxHash(txid);
       toast.success("Contract initialized successfully!");
     } catch (error: any) {
       console.error(error);
@@ -95,7 +118,6 @@ const CreateEscrow = () => {
   return (
     <div className="p-6 max-w-2xl mx-auto">
       <div className="border border-border bg-card rounded-sm border-glow">
-        {/* Panel header */}
         <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-secondary/50">
           <span className="text-xs text-primary uppercase tracking-widest terminal-glow">
             ▸ {t("NEW ESCROW CONTRACT")}
@@ -104,7 +126,6 @@ const CreateEscrow = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
-          {/* Amount */}
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground uppercase tracking-wider">
               {t("AMOUNT (USDC)")}
@@ -123,7 +144,6 @@ const CreateEscrow = () => {
             </div>
           </div>
 
-          {/* Payee */}
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground uppercase tracking-wider">
               {t("PAYER ADDRESS")}
@@ -134,11 +154,10 @@ const CreateEscrow = () => {
               onChange={(e) => handleChange("payee", e.target.value)}
               placeholder="Enter Solana address..."
               maxLength={44}
-              className="w-full bg-background border border-border rounded-sm px-3 py-2.5 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+              className="w-full bg-background border border-border rounded-sm px-3 py-2.5 text-sm font-mono text-foreground focus:outline-none focus:border-primary/50"
             />
           </div>
 
-          {/* Oracle */}
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground uppercase tracking-wider">
               {t("ORACLE ADDRESS")}
@@ -149,11 +168,10 @@ const CreateEscrow = () => {
               onChange={(e) => handleChange("oracle", e.target.value)}
               placeholder="Enter oracle address..."
               maxLength={44}
-              className="w-full bg-background border border-border rounded-sm px-3 py-2.5 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+              className="w-full bg-background border border-border rounded-sm px-3 py-2.5 text-sm font-mono text-foreground focus:outline-none focus:border-primary/50"
             />
           </div>
 
-          {/* Milestone */}
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground uppercase tracking-wider">
               {t("MILESTONE DESCRIPTION")}
@@ -164,11 +182,10 @@ const CreateEscrow = () => {
               placeholder="Describe the deliverable..."
               maxLength={500}
               rows={3}
-              className="w-full bg-background border border-border rounded-sm px-3 py-2.5 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 resize-none"
+              className="w-full bg-background border border-border rounded-sm px-3 py-2.5 text-sm font-mono text-foreground focus:outline-none focus:border-primary/50 resize-none"
             />
           </div>
 
-          {/* Timeout */}
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground uppercase tracking-wider">
               {t("TIMEOUT (DAYS)")}
@@ -179,16 +196,15 @@ const CreateEscrow = () => {
               max="365"
               value={form.timeout}
               onChange={(e) => handleChange("timeout", e.target.value)}
-              className="w-32 bg-background border border-border rounded-sm px-3 py-2.5 text-sm font-mono text-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+              className="w-32 bg-background border border-border rounded-sm px-3 py-2.5 text-sm font-mono text-foreground focus:outline-none focus:border-primary/50"
             />
           </div>
 
-          {/* Divider */}
           <div className="border-t border-border pt-4 space-y-4">
             {txHash && (
               <div className="p-3 bg-terminal-green/10 border border-terminal-green/30 rounded-sm">
                 <span className="text-[10px] text-terminal-green uppercase tracking-wider block mb-1">
-                  Transaction Confirmed
+                  Transaction Sent
                 </span>
                 <a
                   href={`https://solscan.io/tx/${txHash}?cluster=devnet`}
