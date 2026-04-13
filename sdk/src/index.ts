@@ -25,7 +25,7 @@ import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-tok
 // Replace with `anchor build && cat target/idl/proofpay.json` after deploying.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PROOFPAY_IDL: Idl = {
+const PROOFPAY_IDL: any = {
   version: "0.1.0",
   name: "proofpay",
   instructions: [
@@ -417,7 +417,7 @@ export class ProofPayClient {
 
     // If a provider is supplied, initialize the Anchor program for read+write
     if (config.provider) {
-      this.program = new Program(PROOFPAY_IDL, this.programId, config.provider);
+      this.program = new Program(PROOFPAY_IDL, config.provider as any);
     }
   }
 
@@ -449,7 +449,7 @@ export class ProofPayClient {
     // ── Mode 1: full Anchor deserialization (provider supplied) ───────────
     if (this.program) {
       try {
-        const raw = await this.program.account["escrowAccount"].fetch(pda);
+        const raw = await (this.program.account as any)["escrowAccount"].fetch(pda);
         return mapRawEscrow(raw);
       } catch {
         // Account not found
@@ -514,22 +514,22 @@ export class ProofPayClient {
     }));
 
     // If oracle was somehow required in accounts, it could go to accounts() but based on Rust standard IDL it's an arg.
-    return program.methods
+    return (program.methods as any)
       .createEscrow(
         Array.from(escrowId),
         params.oracle,
-        new BN(params.amount),
+        new BN(params.amount.toString()),
         milestones,
-        new BN(params.timeoutDays ? params.timeoutDays * 86400 : 30 * 86400)
+        new BN((params.timeoutDays ? params.timeoutDays * 86400 : 30 * 86400).toString())
       )
       .accounts({
         escrow: pda,
-        payer: program.provider.publicKey!,
+        payer: (program.provider as any).publicKey!,
         payee: params.payee,
         usdcMint: params.usdcMint,
-        systemProgram: PublicKey.default, // Using default SystemProgram ID if not specifically imported
+        systemProgram: PublicKey.default,
         oracle: params.oracle,
-      } as any)
+      })
       .rpc();
   }
 

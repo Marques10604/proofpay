@@ -1,4 +1,14 @@
 {
   "name": "proofpay-web",
-  "version": "1.0.0"
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "sdk",
+    "app"
+  ],
+  "scripts": {
+    "build:sdk": "npm run build -w sdk",
+    "build:app": "npm run build -w app",
+    "build": "npm run build:sdk && npm run build:app"
+  }
 }
