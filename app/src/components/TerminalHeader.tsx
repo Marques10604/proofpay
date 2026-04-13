@@ -12,18 +12,26 @@ const TerminalHeader = ({ activeTab, onTabChange }: TerminalHeaderProps) => {
 
   const handleWalletAction = async () => {
     if (connected) {
-      await disconnect();
+      try {
+        await disconnect();
+      } catch (e) {
+        console.error("Disconnect failed", e);
+      }
     } else {
       try {
-        if (!wallet) {
-          const phantom = wallets.find(w => w.adapter.name === 'Phantom');
-          if (phantom) {
-            select(phantom.adapter.name);
-          } else if (wallets.length > 0) {
-            select(wallets[0].adapter.name);
-          }
+        // Explicitly select Phantom before connecting to avoid WalletNotSelectedError
+        if (!wallet || wallet.adapter.name !== 'Phantom') {
+          select('Phantom' as any);
         }
-        await connect();
+        
+        // Wait a tiny bit for state to propagate (optional but safer in some React versions)
+        setTimeout(async () => {
+          try {
+            await connect();
+          } catch (e) {
+            console.error("Delayed connect failed", e);
+          }
+        }, 10);
       } catch (error) {
         console.error("Wallet connection error:", error);
       }

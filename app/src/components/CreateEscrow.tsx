@@ -30,18 +30,26 @@ const CreateEscrow = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!wallet) {
-      toast.error("Please connect your wallet");
+    
+    // R6: Critical hardening - Ensure wallet is fully connected and ready
+    if (!wallet || !wallet.publicKey) {
+      toast.error("Please connect your Solana wallet first");
+      return;
+    }
+
+    // Basic input validation
+    if (!form.payee || !form.oracle || !form.amount) {
+      toast.error("Please fill in all mandatory fields");
       return;
     }
 
     try {
       setLoading(true);
       
-      // Use the connection from the hook or fallback to clusterApiUrl
+      // Instantiate provider AND client strictly inside the handler
       const provider = new AnchorProvider(
         connection, 
-        wallet as any, // Cast to any to satisfy AnchorWallet interface if needed
+        wallet, 
         AnchorProvider.defaultOptions()
       );
       
@@ -50,11 +58,20 @@ const CreateEscrow = () => {
       // Generate random 32-byte identity for escrow
       const escrowId = window.crypto.getRandomValues(new Uint8Array(32));
 
+      // Validate addresses before creating PublicKeys
+      let payeePubkey, oraclePubkey;
+      try {
+        payeePubkey = new PublicKey(form.payee);
+        oraclePubkey = new PublicKey(form.oracle);
+      } catch (err) {
+        throw new Error("Invalid Solana address for Payer or Oracle");
+      }
+
       const params = {
-        payee: new PublicKey(form.payee),
+        payee: payeePubkey,
         usdcMint: DEVNET_USDC,
-        oracle: new PublicKey(form.oracle),
-        amount: parseFloat(form.amount) * 1_000_000, // 6 decimals
+        oracle: oraclePubkey,
+        amount: Math.floor(parseFloat(form.amount) * 1_000_000), // Ensure integer u64
         milestones: [
           {
             description: form.milestone || "Deliverable 1",
