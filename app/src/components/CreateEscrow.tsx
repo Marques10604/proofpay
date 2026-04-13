@@ -22,7 +22,7 @@ const PROGRAM_ID = new PublicKey("FpN5kH3w6kVLDEHz1zUfSof2n2QfMKfENCE97LMiut6i")
 const DEVNET_USDC = new PublicKey("Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr");
 
 // Discriminator: sha256("global:create_escrow").slice(0, 8)
-const CREATE_ESCROW_DISCRIMINATOR = Buffer.from([170, 114, 219, 13, 246, 203, 102, 19]);
+const CREATE_ESCROW_DISCRIMINATOR = Buffer.from([253, 215, 165, 116, 36, 108, 68, 80]);
 
 const CreateEscrow = () => {
   const { t } = useLanguage();
