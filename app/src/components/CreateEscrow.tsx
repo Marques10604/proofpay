@@ -37,7 +37,14 @@ const CreateEscrow = () => {
 
     try {
       setLoading(true);
-      const provider = new AnchorProvider(connection, wallet, {});
+      
+      // Use the connection from the hook or fallback to clusterApiUrl
+      const provider = new AnchorProvider(
+        connection, 
+        wallet as any, // Cast to any to satisfy AnchorWallet interface if needed
+        AnchorProvider.defaultOptions()
+      );
+      
       const client = new ProofPayClient({ provider });
 
       // Generate random 32-byte identity for escrow
