@@ -1,5 +1,7 @@
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { useLanguage } from "@/lib/LanguageContext";
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
 
 interface TerminalHeaderProps {
   activeTab: string;
@@ -7,8 +9,45 @@ interface TerminalHeaderProps {
 }
 
 const TerminalHeader = ({ activeTab, onTabChange }: TerminalHeaderProps) => {
-  const { connected, publicKey, wallet, disconnect, connect, select, wallets } = useWallet();
+  const { connected, publicKey, wallet, disconnect, connect, select } = useWallet();
+  const { connection } = useConnection();
   const { language, setLanguage, t } = useLanguage();
+  
+  const [solPrice, setSolPrice] = useState<number | null>(null);
+  const [tps, setTps] = useState<number | null>(null);
+  const [escrowCount, setEscrowCount] = useState<number>(0);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      // 1. SOL Price (Jupiter)
+      try {
+        const res = await fetch("https://price.jup.ag/v4/price?ids=SOL");
+        const json = await res.json();
+        setSolPrice(json.data.SOL.price);
+      } catch (e) { console.error("Price fetch failed"); }
+
+      // 2. TPS (Solana)
+      try {
+        const res = await connection.getRecentPerformanceSamples(1);
+        if (res.length > 0) {
+          const sample = res[0];
+          setTps(Math.round(sample.numTransactions / sample.samplePeriodSecs));
+        }
+      } catch (e) { console.error("TPS fetch failed"); }
+
+      // 3. Active Escrows (Supabase)
+      try {
+        const { count, error } = await supabase
+          .from("escrows")
+          .select("*", { count: 'exact', head: true });
+        if (!error) setEscrowCount(count || 0);
+      } catch (e) { console.error("Escrow count failed"); }
+    };
+
+    fetchData();
+    const interval = setInterval(fetchData, 30000); // 30s refresh
+    return () => clearInterval(interval);
+  }, [connection]);
 
   const handleWalletAction = async () => {
     if (connected) {
@@ -59,8 +98,19 @@ const TerminalHeader = ({ activeTab, onTabChange }: TerminalHeaderProps) => {
           <span className="text-muted-foreground text-xs">
             ESCROW PROTOCOL v1.0
           </span>
-          <span className="text-muted-foreground text-xs">│</span>
           <span className="text-muted-foreground text-xs">SOLANA DEVNET</span>
+          <span className="text-muted-foreground text-xs">│</span>
+          <div className="flex items-center gap-4 text-[10px] font-mono whitespace-nowrap overflow-hidden">
+            <span className="text-terminal-green">
+              SOL/USD: ${solPrice?.toFixed(2) || "---"}
+            </span>
+            <span className="text-primary">
+              TPS: {tps || "---"}
+            </span>
+            <span className="text-muted-foreground uppercase">
+              ACTIVE ESCROWS: {escrowCount}
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 text-xs">
