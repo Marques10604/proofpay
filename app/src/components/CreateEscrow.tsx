@@ -1,9 +1,21 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/lib/LanguageContext";
+import { useConnection, useAnchorWallet } from "@solana/wallet-adapter-react";
+import { AnchorProvider } from "@coral-xyz/anchor";
+import { PublicKey } from "@solana/web3.js";
+import { ProofPayClient } from "@proofpay/sdk";
+import { toast } from "sonner";
+
+const DEVNET_USDC = new PublicKey("4zMMC9srt5Ri5Z14GAgXBYHtdGY9AFEz4ztSYZ6yWk7");
 
 const CreateEscrow = () => {
   const { t } = useLanguage();
+  const { connection } = useConnection();
+  const wallet = useAnchorWallet();
+  const [loading, setLoading] = useState(false);
+  const [txHash, setTxHash] = useState<string | null>(null);
+
   const [form, setForm] = useState({
     amount: "",
     payee: "",
@@ -16,9 +28,44 @@ const CreateEscrow = () => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Initialize contract:", form);
+    if (!wallet) {
+      toast.error("Please connect your wallet");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const provider = new AnchorProvider(connection, wallet, {});
+      const client = new ProofPayClient({ provider });
+
+      // Generate random 32-byte identity for escrow
+      const escrowId = window.crypto.getRandomValues(new Uint8Array(32));
+
+      const params = {
+        payee: new PublicKey(form.payee),
+        usdcMint: DEVNET_USDC,
+        oracle: new PublicKey(form.oracle),
+        amount: parseFloat(form.amount) * 1_000_000, // 6 decimals
+        milestones: [
+          {
+            description: form.milestone || "Deliverable 1",
+            releasePercent: 100,
+          },
+        ],
+        timeoutDays: parseInt(form.timeout) || 30,
+      };
+
+      const tx = await client.createEscrow(escrowId, params);
+      setTxHash(tx);
+      toast.success("Contract initialized successfully!");
+    } catch (error: any) {
+      console.error(error);
+      toast.error(`Error: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -113,12 +160,28 @@ const CreateEscrow = () => {
           </div>
 
           {/* Divider */}
-          <div className="border-t border-border pt-4">
+          <div className="border-t border-border pt-4 space-y-4">
+            {txHash && (
+              <div className="p-3 bg-terminal-green/10 border border-terminal-green/30 rounded-sm">
+                <span className="text-[10px] text-terminal-green uppercase tracking-wider block mb-1">
+                  Transaction Confirmed
+                </span>
+                <a
+                  href={`https://solscan.io/tx/${txHash}?cluster=devnet`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-mono text-foreground hover:text-primary transition-colors underline break-all"
+                >
+                  {txHash}
+                </a>
+              </div>
+            )}
             <Button
               type="submit"
-              className="w-full bg-primary text-primary-foreground font-bold uppercase tracking-widest text-xs py-5 hover:bg-primary/90 rounded-sm"
+              disabled={loading}
+              className="w-full bg-primary text-primary-foreground font-bold uppercase tracking-widest text-xs py-5 hover:bg-primary/90 rounded-sm disabled:opacity-50"
             >
-              ▸ {t("INITIALIZE CONTRACT")}
+              {loading ? "Processing..." : `▸ ${t("INITIALIZE CONTRACT")}`}
             </Button>
           </div>
         </form>
