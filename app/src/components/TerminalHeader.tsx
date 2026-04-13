@@ -1,5 +1,4 @@
 import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { useLanguage } from "@/lib/LanguageContext";
 
 interface TerminalHeaderProps {
@@ -8,8 +7,32 @@ interface TerminalHeaderProps {
 }
 
 const TerminalHeader = ({ activeTab, onTabChange }: TerminalHeaderProps) => {
-  const { connected } = useWallet();
+  const { connected, publicKey, wallet, disconnect, connect, select, wallets } = useWallet();
   const { language, setLanguage, t } = useLanguage();
+
+  const handleWalletAction = async () => {
+    if (connected) {
+      await disconnect();
+    } else {
+      try {
+        if (!wallet) {
+          const phantom = wallets.find(w => w.adapter.name === 'Phantom');
+          if (phantom) {
+            select(phantom.adapter.name);
+          } else if (wallets.length > 0) {
+            select(wallets[0].adapter.name);
+          }
+        }
+        await connect();
+      } catch (error) {
+        console.error("Wallet connection error:", error);
+      }
+    }
+  };
+
+  const walletLabel = connected 
+    ? publicKey?.toBase58().slice(0, 4) + "..." + publicKey?.toBase58().slice(-4)
+    : (language === "en" ? "CONNECT WALLET" : "CONECTAR WALLET");
 
   const tabs = [
     { id: "create", label: t("CREATE"), shortcut: "F1" },
@@ -56,7 +79,12 @@ const TerminalHeader = ({ activeTab, onTabChange }: TerminalHeaderProps) => {
             </button>
           </div>
 
-          <WalletMultiButton />
+          <button
+            onClick={handleWalletAction}
+            className="px-4 h-9 bg-primary text-primary-foreground text-[10px] font-bold uppercase tracking-widest rounded-sm hover:bg-primary/90 transition-colors terminal-glow"
+          >
+            {walletLabel}
+          </button>
         </div>
       </div>
 
