@@ -16,6 +16,7 @@ import {
 } from "@solana/spl-token";
 import { toast } from "sonner";
 import { Buffer } from "buffer";
+import PROOFPAY_IDL from "../idl/proofpay.json";
 
 const PROGRAM_ID = new PublicKey("FpN5kH3w6kVLDEHz1zUfSof2n2QfMKfENCE97LMiut6i");
 const DEVNET_USDC = new PublicKey("Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr");

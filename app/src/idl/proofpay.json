@@ -1,0 +1,189 @@
+{
+  version: "0.1.0",
+  name: "proofpay",
+  instructions: [
+    {
+      name: "createEscrow",
+      accounts: [
+        { name: "escrow", isMut: true, isSigner: false },
+        { name: "payer", isMut: true, isSigner: true },
+        { name: "payee", isMut: false, isSigner: false },
+        { name: "usdcMint", isMut: false, isSigner: false },
+        { name: "systemProgram", isMut: false, isSigner: false },
+      ],
+      args: [
+        { name: "escrowId", type: { array: ["u8", 32] } },
+        { name: "oracle", type: "publicKey" },
+        { name: "totalAmount", type: "u64" },
+        { name: "milestones", type: { vec: { defined: "Milestone" } } },
+        { name: "timeoutSeconds", type: "i64" },
+      ],
+    },
+    {
+      name: "fundEscrow",
+      accounts: [
+        { name: "escrow", isMut: true, isSigner: false },
+        { name: "payer", isMut: true, isSigner: true },
+        { name: "payerTokenAccount", isMut: true, isSigner: false },
+        { name: "vault", isMut: true, isSigner: false },
+        { name: "usdcMint", isMut: false, isSigner: false },
+        { name: "tokenProgram", isMut: false, isSigner: false },
+      ],
+      args: [{ name: "amount", type: "u64" }],
+    },
+    {
+      name: "releaseMilestone",
+      accounts: [
+        { name: "escrow", isMut: true, isSigner: false },
+        { name: "payer", isMut: false, isSigner: true },
+        { name: "payee", isMut: false, isSigner: false },
+        { name: "vault", isMut: true, isSigner: false },
+        { name: "payeeTokenAccount", isMut: true, isSigner: false },
+        { name: "usdcMint", isMut: false, isSigner: false },
+        { name: "tokenProgram", isMut: false, isSigner: false },
+      ],
+      args: [],
+    },
+    {
+      name: "refundOnTimeout",
+      accounts: [
+        { name: "escrow", isMut: true, isSigner: false },
+        { name: "payer", isMut: false, isSigner: true },
+        { name: "vault", isMut: true, isSigner: false },
+        { name: "payerTokenAccount", isMut: true, isSigner: false },
+        { name: "usdcMint", isMut: false, isSigner: false },
+        { name: "tokenProgram", isMut: false, isSigner: false },
+      ],
+      args: [],
+    },
+    {
+      name: "openDispute",
+      accounts: [
+        { name: "escrow", isMut: true, isSigner: false },
+        { name: "invoker", isMut: false, isSigner: true },
+      ],
+      args: [{ name: "reason", type: { array: ["u8", 128] } }],
+    },
+    {
+      name: "resolveDispute",
+      accounts: [
+        { name: "escrow", isMut: true, isSigner: false },
+        { name: "oracle", isMut: false, isSigner: true },
+        { name: "payer", isMut: true, isSigner: false },
+        { name: "payee", isMut: true, isSigner: false },
+        { name: "vault", isMut: true, isSigner: false },
+        { name: "payeeTokenAccount", isMut: true, isSigner: false },
+        { name: "payerTokenAccount", isMut: true, isSigner: false },
+        { name: "usdcMint", isMut: false, isSigner: false },
+        { name: "tokenProgram", isMut: false, isSigner: false },
+      ],
+      args: [{ name: "releaseToPayee", type: "bool" }],
+    },
+  ],
+  accounts: [
+    {
+      name: "EscrowAccount",
+      type: {
+        kind: "struct",
+        fields: [
+          { name: "escrowId",        type: { array: ["u8", 32] } },
+          { name: "payer",           type: "publicKey" },
+          { name: "payee",           type: "publicKey" },
+          { name: "usdcMint",        type: "publicKey" },
+          { name: "totalAmount",     type: "u64" },
+          { name: "releasedAmount",  type: "u64" },
+          { name: "milestones",      type: { vec: { defined: "Milestone" } } },
+          { name: "currentMilestone",type: "u8" },
+          { name: "state",           type: { defined: "EscrowState" } },
+          { name: "createdAt",       type: "i64" },
+          { name: "timeoutAt",       type: "i64" },
+          { name: "bump",            type: "u8" },
+          { name: "disputedAt",      type: "i64" },
+          { name: "disputedBy",      type: "publicKey" },
+          { name: "disputeReason",   type: { array: ["u8", 128] } },
+          { name: "oracle",          type: "publicKey" },
+        ],
+      },
+    },
+  ],
+  types: [
+    {
+      name: "Milestone",
+      type: {
+        kind: "struct",
+        fields: [
+          { name: "description", type: { array: ["u8", 64] } },
+          { name: "releaseBps",  type: "u16" },
+        ],
+      },
+    },
+    {
+      name: "EscrowState",
+      type: {
+        kind: "enum",
+        variants: [
+          { name: "Created" },
+          { name: "Funded" },
+          { name: "Completed" },
+          { name: "Refunded" },
+          { name: "Disputed" },
+        ],
+      },
+    },
+  ],
+  events: [
+    {
+      name: "EscrowCreated",
+      fields: [
+        { name: "escrowId",    type: { array: ["u8", 32] }, index: false },
+        { name: "payer",       type: "publicKey",           index: false },
+        { name: "payee",       type: "publicKey",           index: false },
+        { name: "totalAmount", type: "u64",                 index: false },
+      ],
+    },
+    // R4: events missing from initial IDL — added per audit FINDING-4
+    {
+      name: "EscrowFunded",
+      fields: [
+        { name: "escrowId", type: { array: ["u8", 32] }, index: false },
+        { name: "amount",   type: "u64",                 index: false },
+      ],
+    },
+    {
+      name: "MilestoneReleased",
+      fields: [
+        { name: "escrowId",       type: { array: ["u8", 32] }, index: false },
+        { name: "milestoneIndex", type: "u8",                  index: false },
+        { name: "amount",         type: "u64",                 index: false },
+      ],
+    },
+    {
+      name: "EscrowRefunded",
+      fields: [
+        { name: "escrowId", type: { array: ["u8", 32] }, index: false },
+        { name: "amount",   type: "u64",                 index: false },
+      ],
+    },
+    {
+      name: "DisputeOpened",
+      fields: [
+        { name: "escrowId",   type: { array: ["u8", 32] }, index: false },
+        { name: "disputedBy", type: "publicKey",           index: false },
+        { name: "timestamp",  type: "i64",                 index: false },
+      ],
+    },
+  ],
+  errors: [
+    { code: 6000, name: "InvalidState",          msg: "Invalid escrow state for this operation" },
+    { code: 6001, name: "Unauthorized",          msg: "Unauthorized signer" },
+    { code: 6002, name: "InvalidAmount",         msg: "Invalid amount" },
+    { code: 6003, name: "MilestoneBpsMismatch",  msg: "Milestone basis points must sum to 10000" },
+    { code: 6004, name: "InvalidMilestoneCount", msg: "Invalid number of milestones (1-10)" },
+    { code: 6005, name: "AllMilestonesReleased", msg: "All milestones have been released" },
+    { code: 6006, name: "TimeoutNotReached",     msg: "Timeout period has not been reached yet" },
+    { code: 6007, name: "EscrowAlreadyDisputed", msg: "Escrow is already in Disputed state" },
+    { code: 6008, name: "WrongMint",             msg: "Vault or token account has wrong mint — only USDC/USDG accepted" },
+    // R4: added per audit FINDING-3 (R3 in lib.rs)
+    { code: 6009, name: "ArithmeticOverflow",    msg: "Arithmetic overflow or underflow in amount calculation" },
+  ],
+}
