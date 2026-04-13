@@ -8,11 +8,17 @@ import {
   TransactionInstruction, 
   SystemProgram 
 } from "@solana/web3.js";
+import { 
+  getAssociatedTokenAddressSync, 
+  createAssociatedTokenAccountInstruction, 
+  TOKEN_PROGRAM_ID, 
+  ASSOCIATED_TOKEN_PROGRAM_ID 
+} from "@solana/spl-token";
 import { toast } from "sonner";
 import { Buffer } from "buffer";
 
 const PROGRAM_ID = new PublicKey("5rULicy7hRi91KADEB1J4kgPtezJHgM96WM7pXCYNYFY");
-const DEVNET_USDC = new PublicKey("4zMMC9srt5Ri5Z14GAgXBYHtdGY9AFEz4ztSYZ6yWk7");
+const DEVNET_USDC = new PublicKey("Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr");
 
 // Discriminator: sha256("global:create_escrow").slice(0, 8)
 const CREATE_ESCROW_DISCRIMINATOR = Buffer.from([170, 114, 219, 13, 246, 203, 102, 19]);
@@ -90,14 +96,32 @@ const CreateEscrow = () => {
           { pubkey: payeePubkey, isSigner: false, isMut: false },
           { pubkey: DEVNET_USDC, isSigner: false, isMut: false },
           { pubkey: SystemProgram.programId, isSigner: false, isMut: false },
-          // Oracle is usually an arg, but if accounts are mapped by the user requirement:
           { pubkey: oraclePubkey, isSigner: false, isMut: false },
         ],
         programId: PROGRAM_ID,
         data: data,
       });
 
-      const transaction = new Transaction().add(instruction);
+      const transaction = new Transaction();
+      
+      // Check if payer USDC ATA exists
+      const payerAta = getAssociatedTokenAddressSync(DEVNET_USDC, publicKey);
+      const ataInfo = await connection.getAccountInfo(payerAta);
+      
+      if (!ataInfo) {
+        console.log("Adding ATA creation instruction...");
+        transaction.add(
+          createAssociatedTokenAccountInstruction(
+            publicKey, // payer
+            payerAta,
+            publicKey, // owner
+            DEVNET_USDC
+          )
+        );
+      }
+
+      transaction.add(instruction);
+      
       const { blockhash } = await connection.getLatestBlockhash();
       transaction.recentBlockhash = blockhash;
       transaction.feePayer = publicKey;
