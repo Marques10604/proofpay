@@ -21,8 +21,8 @@ import PROOFPAY_IDL from "../idl/proofpay.json";
 const PROGRAM_ID = new PublicKey("FpN5kH3w6kVLDEHz1zUfSof2n2QfMKfENCE97LMiut6i");
 const DEVNET_USDC = new PublicKey("Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr");
 
-// Discriminator: sha256("global:create_escrow").slice(0, 8)
 const CREATE_ESCROW_DISCRIMINATOR = Buffer.from([253, 215, 165, 116, 36, 108, 68, 80]);
+const FUND_ESCROW_DISCRIMINATOR = Buffer.from([155, 18, 218, 141, 182, 213, 69, 201]);
 
 const CreateEscrow = () => {
   const { t } = useLanguage();
@@ -130,7 +130,53 @@ const CreateEscrow = () => {
       const txid = await connection.sendRawTransaction(signed.serialize());
       
       setTxHash(txid);
-      toast.success("Contract initialized successfully!");
+      
+      // Chamar Fund Escrow
+      toast.info("Initializing funding (0.1 USDC)...");
+      const vaultAta = getAssociatedTokenAddressSync(DEVNET_USDC, escrowPda, true);
+      const vaultInfo = await connection.getAccountInfo(vaultAta);
+      
+      const fundData = Buffer.alloc(16);
+      FUND_ESCROW_DISCRIMINATOR.copy(fundData, 0);
+      fundData.writeBigUInt64LE(100000n, 8); // 0.1 USDC (100,000 units)
+
+      const fundTransaction = new Transaction();
+      
+      if (!vaultInfo) {
+        fundTransaction.add(
+          createAssociatedTokenAccountInstruction(
+            publicKey, // payer
+            vaultAta,
+            escrowPda, // owner
+            DEVNET_USDC
+          )
+        );
+      }
+
+      fundTransaction.add(
+        new TransactionInstruction({
+          keys: [
+            { pubkey: escrowPda, isSigner: false, isWritable: true },
+            { pubkey: publicKey, isSigner: true, isWritable: true },
+            { pubkey: payerAta, isSigner: false, isWritable: true },
+            { pubkey: vaultAta, isSigner: false, isWritable: true },
+            { pubkey: DEVNET_USDC, isSigner: false, isWritable: false },
+            { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+          ],
+          programId: PROGRAM_ID,
+          data: fundData,
+        })
+      );
+
+      const { blockhash: fundBh } = await connection.getLatestBlockhash();
+      fundTransaction.recentBlockhash = fundBh;
+      fundTransaction.feePayer = publicKey;
+
+      const signedFund = await signTransaction(fundTransaction);
+      const fundTxid = await connection.sendRawTransaction(signedFund.serialize());
+      
+      console.log("Fund Tx:", fundTxid);
+      toast.success("Contract initialized and funded!");
     } catch (error: any) {
       console.error(error);
       toast.error(`Error: ${error.message}`);
