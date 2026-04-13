@@ -1,19 +1,21 @@
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { useLanguage } from "@/lib/LanguageContext";
 
 interface TerminalHeaderProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
 }
 
-const tabs = [
-  { id: "create", label: "CREATE", shortcut: "F1" },
-  { id: "monitor", label: "MONITOR", shortcut: "F2" },
-  { id: "dispute", label: "DISPUTE", shortcut: "F3" },
-];
-
 const TerminalHeader = ({ activeTab, onTabChange }: TerminalHeaderProps) => {
   const { connected } = useWallet();
+  const { language, setLanguage, t } = useLanguage();
+
+  const tabs = [
+    { id: "create", label: t("CREATE"), shortcut: "F1" },
+    { id: "monitor", label: t("MONITOR"), shortcut: "F2" },
+    { id: "dispute", label: t("DISPUTE"), shortcut: "F3" },
+  ];
 
   return (
     <header className="border-b border-border bg-card">
@@ -33,9 +35,27 @@ const TerminalHeader = ({ activeTab, onTabChange }: TerminalHeaderProps) => {
           <div className="flex items-center gap-2 text-xs">
             <span className={`inline-block w-1.5 h-1.5 rounded-full ${connected ? "bg-terminal-green" : "bg-terminal-red"}`} />
             <span className="text-muted-foreground uppercase">
-              {connected ? "CONNECTED" : "DISCONNECTED"}
+              {connected ? (language === "en" ? "CONNECTED" : "CONECTADO") : (language === "en" ? "DISCONNECTED" : "DESCONECTADO")}
             </span>
           </div>
+
+          {/* Language Toggle */}
+          <div className="flex items-center border border-border rounded-sm overflow-hidden h-9">
+            <button
+              onClick={() => setLanguage("en")}
+              className={`px-3 h-full text-[10px] font-bold transition-colors ${language === "en" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"}`}
+            >
+              EN
+            </button>
+            <div className="w-[1px] h-4 bg-border" />
+            <button
+              onClick={() => setLanguage("pt")}
+              className={`px-3 h-full text-[10px] font-bold transition-colors ${language === "pt" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"}`}
+            >
+              PT
+            </button>
+          </div>
+
           <WalletMultiButton />
         </div>
       </div>

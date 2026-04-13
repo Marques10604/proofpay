@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useLanguage } from "@/lib/LanguageContext";
 
 const CreateEscrow = () => {
+  const { t } = useLanguage();
   const [form, setForm] = useState({
     amount: "",
     payee: "",
@@ -25,7 +27,7 @@ const CreateEscrow = () => {
         {/* Panel header */}
         <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-secondary/50">
           <span className="text-xs text-primary uppercase tracking-widest terminal-glow">
-            ▸ New Escrow Contract
+            ▸ {t("NEW ESCROW CONTRACT")}
           </span>
           <span className="text-xs text-muted-foreground">USDC • SPL</span>
         </div>
@@ -34,7 +36,7 @@ const CreateEscrow = () => {
           {/* Amount */}
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground uppercase tracking-wider">
-              Amount (USDC)
+              {t("AMOUNT (USDC)")}
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-primary text-sm">$</span>
@@ -53,7 +55,7 @@ const CreateEscrow = () => {
           {/* Payee */}
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground uppercase tracking-wider">
-              Payee Wallet Address
+              {t("PAYER ADDRESS")}
             </label>
             <input
               type="text"
@@ -68,7 +70,7 @@ const CreateEscrow = () => {
           {/* Oracle */}
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground uppercase tracking-wider">
-              Oracle Wallet Address
+              {t("ORACLE ADDRESS")}
             </label>
             <input
               type="text"
@@ -83,7 +85,7 @@ const CreateEscrow = () => {
           {/* Milestone */}
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground uppercase tracking-wider">
-              Milestone Description
+              {t("MILESTONE DESCRIPTION")}
             </label>
             <textarea
               value={form.milestone}
@@ -98,7 +100,7 @@ const CreateEscrow = () => {
           {/* Timeout */}
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground uppercase tracking-wider">
-              Timeout (Days)
+              {t("TIMEOUT (DAYS)")}
             </label>
             <input
               type="number"
@@ -116,7 +118,7 @@ const CreateEscrow = () => {
               type="submit"
               className="w-full bg-primary text-primary-foreground font-bold uppercase tracking-widest text-xs py-5 hover:bg-primary/90 rounded-sm"
             >
-              ▸ Initialize Contract
+              ▸ {t("INITIALIZE CONTRACT")}
             </Button>
           </div>
         </form>

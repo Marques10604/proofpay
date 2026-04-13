@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { useLanguage } from "@/lib/LanguageContext";
 
 type EscrowStatus = "FUNDED" | "DISPUTED";
 
@@ -33,11 +34,12 @@ const statusColors: Record<EscrowStatus, string> = {
 };
 
 const EscrowMonitor = () => {
+  const { t } = useLanguage();
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <span className="text-xs text-primary uppercase tracking-widest terminal-glow">
-          ▸ Active Escrows
+          ▸ {t("CONTRACT MONITOR")}
         </span>
         <span className="text-xs text-muted-foreground">
           {mockEscrows.length} contracts
@@ -88,7 +90,7 @@ const EscrowMonitor = () => {
                     variant="destructive"
                     className="text-xs uppercase tracking-widest rounded-sm h-8 px-4"
                   >
-                    ⚠ Signal Dispute
+                    ⚠ {t("OPEN DISPUTE")}
                   </Button>
                 </div>
               )}

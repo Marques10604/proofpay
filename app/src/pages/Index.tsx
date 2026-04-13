@@ -11,6 +11,7 @@ import TerminalHeader from "@/components/TerminalHeader";
 import CreateEscrow from "@/components/CreateEscrow";
 import EscrowMonitor from "@/components/EscrowMonitor";
 import DisputePanel from "@/components/DisputePanel";
+import { LanguageProvider } from "@/lib/LanguageContext";
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("create");
@@ -18,11 +19,12 @@ const Index = () => {
   const wallets = useMemo(() => [], []);
 
   return (
-    <ConnectionProvider endpoint={endpoint}>
-      <WalletProvider wallets={wallets} autoConnect>
-        <WalletModalProvider>
-          <div className="min-h-screen bg-background flex flex-col scanline">
-            <TerminalHeader activeTab={activeTab} onTabChange={setActiveTab} />
+    <LanguageProvider>
+      <ConnectionProvider endpoint={endpoint}>
+        <WalletProvider wallets={wallets} autoConnect>
+          <WalletModalProvider>
+            <div className="min-h-screen bg-background flex flex-col scanline">
+              <TerminalHeader activeTab={activeTab} onTabChange={setActiveTab} />
 
             {/* Status ticker */}
             <div className="border-b border-border bg-secondary/30 py-1 overflow-hidden">
@@ -47,6 +49,7 @@ const Index = () => {
         </WalletModalProvider>
       </WalletProvider>
     </ConnectionProvider>
+    </LanguageProvider>
   );
 };
 

@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useLanguage } from "@/lib/LanguageContext";
 
 const DisputePanel = () => {
+  const { t } = useLanguage();
   const [reason, setReason] = useState("");
 
   const handleOpenDispute = (e: React.FormEvent) => {
@@ -15,7 +17,7 @@ const DisputePanel = () => {
       <div className="border border-border bg-card rounded-sm border-glow">
         <div className="px-4 py-2 border-b border-border bg-secondary/50">
           <span className="text-xs text-terminal-red uppercase tracking-widest">
-            ▸ Open New Dispute
+            ▸ {t("OPEN DISPUTE")}
           </span>
         </div>
 
@@ -39,7 +41,7 @@ const DisputePanel = () => {
             variant="destructive"
             className="w-full uppercase tracking-widest text-xs py-5 rounded-sm font-bold"
           >
-            ▸ Open Dispute
+            ▸ {t("OPEN DISPUTE")}
           </Button>
         </form>
       </div>
@@ -48,7 +50,7 @@ const DisputePanel = () => {
       <div className="border border-border bg-card rounded-sm border-glow">
         <div className="px-4 py-2 border-b border-border bg-secondary/50">
           <span className="text-xs text-terminal-cyan uppercase tracking-widest">
-            ▸ Oracle Verdict
+            ▸ {t("ORACLE VERDICT")}
           </span>
         </div>
 
