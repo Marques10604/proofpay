@@ -1,6 +1,6 @@
 {
   "name": "proofpayapp",
   "version": 2,
-  "buildCommand": "npm run build",
+  "buildCommand": "npm install --include=optional && npm run build",
   "outputDirectory": "app/dist"
 }

@@ -95,6 +95,7 @@
     "vitest": "^3.2.4"
   },
   "optionalDependencies": {
-    "@rollup/rollup-linux-x64-gnu": "^4.60.1"
+    "@rollup/rollup-linux-x64-gnu": "^4.22.4",
+    "@esbuild/linux-x64": "^0.21.5"
   }
 }
