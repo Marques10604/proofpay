@@ -92,12 +92,11 @@ const CreateEscrow = () => {
 
       const instruction = new TransactionInstruction({
         keys: [
-          { pubkey: escrowPda, isSigner: false, isMut: true },
-          { pubkey: publicKey, isSigner: true, isMut: true },
-          { pubkey: payeePubkey, isSigner: false, isMut: false },
-          { pubkey: DEVNET_USDC, isSigner: false, isMut: false },
-          { pubkey: SystemProgram.programId, isSigner: false, isMut: false },
-          { pubkey: oraclePubkey, isSigner: false, isMut: false },
+          { pubkey: escrowPda, isSigner: false, isWritable: true },
+          { pubkey: publicKey, isSigner: true, isWritable: true },
+          { pubkey: payeePubkey, isSigner: false, isWritable: false },
+          { pubkey: DEVNET_USDC, isSigner: false, isWritable: false },
+          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
         ],
         programId: PROGRAM_ID,
         data: data,
