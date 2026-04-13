@@ -12,6 +12,10 @@ export default defineConfig(({ mode }) => ({
       overlay: false,
     },
   },
+  define: {
+    global: "window",
+    "process.env": {},
+  },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
     alias: {
