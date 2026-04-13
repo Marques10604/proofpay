@@ -23,6 +23,8 @@ const translations = {
     "MONITOR": "MONITOR",
     "DISPUTE": "DISPUTA",
     "TIMEOUT (DAYS)": "TIMEOUT (DAYS)",
+    "DISPUTE_EXPLANATION": "Opening a dispute requires a 3 USDC bond via x402. If the AI oracle rules in your favor, the bond is fully refunded.",
+    "DISPUTE BOND": "DISPUTE BOND",
   },
   pt: {
     "NEW ESCROW CONTRACT": "NOVO CONTRATO DE ESCROW",
@@ -38,6 +40,8 @@ const translations = {
     "MONITOR": "MONITORAR",
     "DISPUTE": "DISPUTA",
     "TIMEOUT (DAYS)": "TIMEOUT (DIAS)",
+    "DISPUTE_EXPLANATION": "Abrir uma disputa requer uma garantia de 3 USDC via x402. Se o oráculo de IA decidir a seu favor, a garantia é totalmente reembolsada.",
+    "DISPUTE BOND": "GARANTIA DE DISPUTA",
   },
 };
 

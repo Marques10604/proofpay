@@ -22,6 +22,10 @@ const DisputePanel = () => {
         </div>
 
         <form onSubmit={handleOpenDispute} className="p-4 space-y-4">
+          <p className="text-[10px] text-muted-foreground leading-relaxed border-l-2 border-terminal-red/30 pl-3">
+            {t("DISPUTE_EXPLANATION")}
+          </p>
+
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground uppercase tracking-wider">
               Dispute Reason
@@ -34,6 +38,11 @@ const DisputePanel = () => {
               rows={4}
               className="w-full bg-background border border-border rounded-sm px-3 py-2.5 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-terminal-red/50 focus:ring-1 focus:ring-terminal-red/20 resize-none"
             />
+          </div>
+
+          <div className="flex items-center justify-between py-2 border-t border-b border-border/50 text-xs font-mono">
+            <span className="text-muted-foreground">{t("DISPUTE BOND")}:</span>
+            <span className="text-terminal-red font-bold">3.00 USDC</span>
           </div>
 
           <Button
