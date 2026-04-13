@@ -1,6 +1,6 @@
 {
   "name": "proofpayapp",
   "version": 2,
-  "buildCommand": "cd sdk && npm install && npm run build && cd ../app && npm install && tsc -b && vite build",
+  "buildCommand": "cd app && npm install && npm run build",
   "outputDirectory": "app/dist"
 }

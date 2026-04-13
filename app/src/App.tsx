@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Shield, ShieldAlert, Cpu, TerminalSquare } from 'lucide-react';
+import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import './index.css';
 
 // --- MOCK INTERFACES (Pure React, no Node/Solana dependencies) ---
@@ -75,8 +76,11 @@ export default function App() {
           <Shield size={24} color="var(--term-accent)" />
           <strong style={{ fontSize: '1.2rem', letterSpacing: '2px' }}>PROOFPAY_INFRA</strong>
         </div>
-        <div className="system-status">
-          <span className="blink">●</span> SIMULATED_ENVIRONMENT [MOCK_MODE]
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <div className="system-status">
+            <span className="blink">●</span> SIMULATED_ENVIRONMENT [MOCK_MODE]
+          </div>
+          <WalletMultiButton />
         </div>
       </div>
 
