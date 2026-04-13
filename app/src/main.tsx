@@ -1,14 +1,14 @@
-import { StrictMode, useMemo } from 'react'
-import { createRoot } from 'react-dom/client'
-import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react'
-import { WalletAdapterNetwork } from '@solana/wallet-adapter-base'
-import { PhantomWalletAdapter } from '@solana/wallet-adapter-wallets'
-import { WalletModalProvider } from '@solana/wallet-adapter-react-ui'
-import { clusterApiUrl } from '@solana/web3.js'
+import { useMemo } from "react";
+import { createRoot } from "react-dom/client";
+import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
+import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
+import { PhantomWalletAdapter } from "@solana/wallet-adapter-wallets";
+import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
+import { clusterApiUrl } from "@solana/web3.js";
 
-import '@solana/wallet-adapter-react-ui/styles.css'
-import './index.css'
-import App from './App.tsx'
+import "@solana/wallet-adapter-react-ui/styles.css";
+import "./index.css";
+import App from "./App.tsx";
 
 const Main = () => {
   const network = WalletAdapterNetwork.Devnet;
@@ -16,16 +16,14 @@ const Main = () => {
   const wallets = useMemo(() => [new PhantomWalletAdapter()], []);
 
   return (
-    <StrictMode>
-      <ConnectionProvider endpoint={endpoint}>
-        <WalletProvider wallets={wallets} autoConnect>
-          <WalletModalProvider>
-            <App />
-          </WalletModalProvider>
-        </WalletProvider>
-      </ConnectionProvider>
-    </StrictMode>
+    <ConnectionProvider endpoint={endpoint}>
+      <WalletProvider wallets={wallets} autoConnect>
+        <WalletModalProvider>
+          <App />
+        </WalletModalProvider>
+      </WalletProvider>
+    </ConnectionProvider>
   );
 };
 
-createRoot(document.getElementById('root')!).render(<Main />)
+createRoot(document.getElementById("root")!).render(<Main />);

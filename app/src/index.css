@@ -1,196 +1,130 @@
-:root {
-  --term-bg: #0d0d0d;
-  --term-text: #ebebeb;
-  --term-dim: #555555;
-  --term-accent: #facc15;
-  --term-accent-dim: rgba(250, 204, 21, 0.15);
-  --term-alert: #ef4444;
-  --term-ok: #22c55e;
-  --term-border: #333333;
-  --term-font: "JetBrains Mono", "Space Grotesk", "Courier New", monospace;
-  
-  --spacing-base: 8px;
-  background-color: var(--term-bg);
-  color: var(--term-text);
-  font-family: var(--term-font);
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    --background: 0 0% 3%;
+    --foreground: 50 5% 75%;
+
+    --card: 0 0% 6%;
+    --card-foreground: 50 5% 75%;
+
+    --popover: 0 0% 6%;
+    --popover-foreground: 50 5% 75%;
+
+    --primary: 48 100% 50%;
+    --primary-foreground: 0 0% 3%;
+
+    --secondary: 0 0% 10%;
+    --secondary-foreground: 50 5% 75%;
+
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 45%;
+
+    --accent: 48 100% 50%;
+    --accent-foreground: 0 0% 3%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 15%;
+    --input: 0 0% 15%;
+    --ring: 48 100% 50%;
+
+    --radius: 0.25rem;
+
+    --terminal-green: 120 100% 40%;
+    --terminal-red: 0 72% 51%;
+    --terminal-amber: 38 92% 50%;
+    --terminal-cyan: 187 100% 42%;
+
+    --sidebar-background: 0 0% 5%;
+    --sidebar-foreground: 50 5% 75%;
+    --sidebar-primary: 48 100% 50%;
+    --sidebar-primary-foreground: 0 0% 3%;
+    --sidebar-accent: 0 0% 10%;
+    --sidebar-accent-foreground: 50 5% 75%;
+    --sidebar-border: 0 0% 15%;
+    --sidebar-ring: 48 100% 50%;
+  }
 }
 
-*, *::before, *::after {
-  box-sizing: inherit;
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-mono;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: hsl(48 100% 50% / 0.3);
+    color: hsl(48 100% 70%);
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: hsl(0 0% 5%);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(0 0% 20%);
+    border-radius: 3px;
+  }
 }
 
-body {
-  min-height: 100vh;
-  margin: 0;
-  overflow-x: hidden;
-  line-height: 1.4;
-  -webkit-font-smoothing: none;
+@layer utilities {
+  .terminal-glow {
+    text-shadow: 0 0 8px hsl(48 100% 50% / 0.4);
+  }
+  .border-glow {
+    box-shadow: 0 0 0 1px hsl(48 100% 50% / 0.15), inset 0 1px 0 hsl(0 0% 100% / 0.03);
+  }
+  .scanline {
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      hsl(0 0% 100% / 0.01) 2px,
+      hsl(0 0% 100% / 0.01) 4px
+    );
+  }
 }
 
-/* Typography */
-h1, h2, h3, h4 {
-  text-transform: uppercase;
-  font-weight: normal;
-  letter-spacing: 1px;
-  margin: 0 0 calc(var(--spacing-base) * 2) 0;
-  border-bottom: 1px solid var(--term-border);
-  padding-bottom: calc(var(--spacing-base) * 0.5);
+/* Solana wallet button overrides */
+.wallet-adapter-button {
+  font-family: 'JetBrains Mono', monospace !important;
+  background-color: hsl(0 0% 10%) !important;
+  border: 1px solid hsl(0 0% 20%) !important;
+  border-radius: 0.25rem !important;
+  font-size: 0.75rem !important;
+  height: 36px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
 }
-
-h1 {
-  font-size: 1.5rem;
-  color: var(--term-accent);
-  border-bottom: 2px solid var(--term-accent);
+.wallet-adapter-button:hover {
+  background-color: hsl(48 100% 50% / 0.1) !important;
+  border-color: hsl(48 100% 50% / 0.4) !important;
 }
-
-/* Layout */
-.dashboard {
-  display: grid;
-  grid-template-columns: 350px 1fr;
-  min-height: 100vh;
-  border-top: 4px solid var(--term-accent);
+.wallet-adapter-button-trigger {
+  background-color: hsl(48 100% 50%) !important;
+  color: hsl(0 0% 3%) !important;
+  font-weight: 600 !important;
 }
-
-.panel {
-  padding: calc(var(--spacing-base) * 3);
-  border-right: 1px solid var(--term-border);
+.wallet-adapter-button-trigger:hover {
+  background-color: hsl(48 100% 60%) !important;
 }
-
-.header {
-  grid-column: 1 / -1;
-  padding: calc(var(--spacing-base) * 2) calc(var(--spacing-base) * 3);
-  border-bottom: 1px solid var(--term-border);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+/* Override default "Select Wallet" text */
+.wallet-adapter-button-trigger .wallet-adapter-button-start-icon ~ * {
+  font-size: 0 !important;
 }
-
-.system-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  color: var(--term-ok);
+.wallet-adapter-button-trigger::after {
+  content: "CONNECT WALLET";
+  font-size: 0.75rem !important;
 }
-
-.blink {
-  animation: blinker 2s linear infinite;
-}
-
-@keyframes blinker {
-  50% { opacity: 0; }
-}
-
-/* Forms & Inputs */
-.form-group {
-  margin-bottom: calc(var(--spacing-base) * 2);
-}
-
-label {
-  display: block;
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  color: var(--term-dim);
-  margin-bottom: 4px;
-}
-
-input {
-  width: 100%;
-  background: transparent;
-  border: 1px solid var(--term-border);
-  color: var(--term-text);
-  padding: calc(var(--spacing-base) * 1.5);
-  font-family: inherit;
-  font-size: 1rem;
-  outline: none;
-  transition: border-color 0.1s;
-}
-
-input:focus {
-  border-color: var(--term-accent);
-  background: var(--term-accent-dim);
-}
-
-/* Buttons */
-button {
-  background: transparent;
-  color: var(--term-text);
-  border: 1px solid var(--term-border);
-  padding: calc(var(--spacing-base) * 1.5) calc(var(--spacing-base) * 2);
-  font-family: inherit;
-  font-size: 0.9rem;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: all 0.1s;
-  width: 100%;
-}
-
-button:hover {
-  background: var(--term-text);
-  color: var(--term-bg);
-}
-
-button.primary {
-  border-color: var(--term-accent);
-  color: var(--term-accent);
-}
-
-button.primary:hover {
-  background: var(--term-accent);
-  color: var(--term-bg);
-}
-
-button.danger {
-  border-color: var(--term-alert);
-  color: var(--term-alert);
-}
-
-button.danger:hover {
-  background: var(--term-alert);
-  color: var(--term-bg);
-}
-
-/* Escrow Status Card */
-.escrow-card {
-  border: 1px solid var(--term-border);
-  padding: calc(var(--spacing-base) * 2);
-  margin-bottom: calc(var(--spacing-base) * 2);
-  position: relative;
-}
-
-.escrow-card::before {
-  content: "";
-  position: absolute;
-  top: 0; left: 0;
-  width: 4px;
-  height: 100%;
-  background: var(--term-dim);
-}
-
-.escrow-card.funded::before { background: var(--term-ok); }
-.escrow-card.disputed::before { background: var(--term-alert); }
-.escrow-card.completed::before { background: var(--term-dim); }
-
-.data-row {
-  display: flex;
-  justify-content: space-between;
-  border-bottom: 1px dashed var(--term-border);
-  padding: 4px 0;
-  font-size: 0.9rem;
-}
-
-.badge {
-  display: inline-block;
-  padding: 2px 6px;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  border: 1px solid;
-}
-
-.badge.funded { color: var(--term-ok); border-color: var(--term-ok); }
-.badge.disputed { color: var(--term-alert); border-color: var(--term-alert); }
-.badge.completed { color: var(--term-dim); border-color: var(--term-dim); }
