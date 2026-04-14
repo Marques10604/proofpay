@@ -21,5 +21,12 @@
     "tsx": "^4.0.0",
     "typescript": "^5.4.0"
   },
+  "engines": {
+    "node": "20.x"
+  },
+  "overrides": {
+    "@solana/web3.js": "1.98.4",
+    "bn.js": "^5.2.1"
+  },
   "license": "MIT"
 }

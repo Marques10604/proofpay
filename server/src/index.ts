@@ -1,3 +1,6 @@
+import { Buffer } from 'node:buffer';
+globalThis.Buffer = Buffer;
+
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -6,7 +9,6 @@ import { AnchorProvider, Wallet, BN, Program } from '@coral-xyz/anchor';
 import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { createClient } from '@supabase/supabase-js';
 import 'dotenv/config';
-import { Buffer } from 'buffer';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SDK Types (Inlined for standalone deploy)
@@ -80,7 +82,8 @@ class ProofPayClient {
   constructor(rpcUrl: string, provider: AnchorProvider) {
     this.connection = new Connection(rpcUrl, "confirmed");
     this.programId = new PublicKey("FpN5kH3w6kVLDEHz1zUfSof2n2QfMKfENCE97LMiut6i");
-    this.program = new Program(PROOFPAY_IDL, provider as any);
+    // Anchor 0.30.x: Program(idl, provider)
+    this.program = new Program(PROOFPAY_IDL as any, provider as any);
   }
 
   async getEscrowPDA(escrowId: Uint8Array): Promise<PublicKey> {
