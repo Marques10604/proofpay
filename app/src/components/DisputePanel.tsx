@@ -1,14 +1,105 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/lib/LanguageContext";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { PublicKey, Transaction, TransactionInstruction } from "@solana/web3.js";
+import { toast } from "sonner";
+import { Buffer } from "buffer";
+
+const PROGRAM_ID = new PublicKey("FpN5kH3w6kVLDEHz1zUfSof2n2QfMKfENCE97LMiut6i");
 
 const DisputePanel = () => {
   const { t } = useLanguage();
   const [reason, setReason] = useState("");
+  const [escrowPda, setEscrowPda] = useState("");
+  const [escrowId, setEscrowId] = useState("");
+  const [oracleVerdict, setOracleVerdict] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleOpenDispute = (e: React.FormEvent) => {
+  const { connection } = useConnection();
+  const { publicKey, signTransaction } = useWallet();
+
+  const handleOpenDispute = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Open dispute:", { reason });
+    if (!publicKey || !signTransaction) {
+      toast.error("Please connect your wallet");
+      return;
+    }
+    if (!escrowPda || !escrowId || !reason) {
+      toast.error("Please fill all fields");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const pdaPubkey = new PublicKey(escrowPda);
+
+      // Parse escrowId
+      let escrowIdBytes: Uint8Array;
+      if (escrowId.startsWith("[")) {
+        escrowIdBytes = new Uint8Array(JSON.parse(escrowId));
+      } else {
+        escrowIdBytes = new Uint8Array(Buffer.from(escrowId.replace("0x", ""), "hex"));
+      }
+
+      if (escrowIdBytes.length !== 32) {
+        toast.error("Escrow ID must be 32 bytes");
+        return;
+      }
+
+      // Calculate discriminator
+      const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("global:open_dispute"));
+      const discriminator = new Uint8Array(hashBuffer).slice(0, 8);
+
+      const reasonBuffer = Buffer.alloc(128);
+      reasonBuffer.write(reason, 0, "utf-8");
+
+      const data = Buffer.concat([discriminator, reasonBuffer]);
+
+      const instruction = new TransactionInstruction({
+        keys: [
+          { pubkey: pdaPubkey, isSigner: false, isWritable: true },
+          { pubkey: publicKey, isSigner: true, isWritable: false },
+        ],
+        programId: PROGRAM_ID,
+        data: data,
+      });
+
+      const transaction = new Transaction().add(instruction);
+      const { blockhash } = await connection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = publicKey;
+
+      const signed = await signTransaction(transaction);
+      const txid = await connection.sendRawTransaction(signed.serialize());
+      
+      toast.success("Dispute opened on chain! Tx: " + txid);
+
+      // Call oracle evaluate
+      const response = await fetch("https://proofpay-oracle.onrender.com/oracle/evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          escrow_id: Array.from(escrowIdBytes),
+          evidence: reason,
+          escrow_pda: escrowPda,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Oracle failed: " + await response.text());
+      }
+
+      const result = await response.json();
+      setOracleVerdict(result);
+      toast.success("Oracle evaluation completed!");
+
+    } catch (err: any) {
+      console.error(err);
+      toast.error(`Error: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -28,13 +119,39 @@ const DisputePanel = () => {
 
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground uppercase tracking-wider">
+              Escrow PDA
+            </label>
+            <input
+              type="text"
+              value={escrowPda}
+              onChange={(e) => setEscrowPda(e.target.value)}
+              placeholder="e.g. 5xV..."
+              className="w-full bg-background border border-border rounded-sm px-3 py-2.5 text-sm font-mono text-foreground focus:outline-none focus:border-terminal-red/50 focus:ring-1 focus:ring-terminal-red/20"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground uppercase tracking-wider">
+              Escrow ID (Hex or array)
+            </label>
+            <input
+              type="text"
+              value={escrowId}
+              onChange={(e) => setEscrowId(e.target.value)}
+              placeholder="e.g. 0x12ab... or [1, 2, ...]"
+              className="w-full bg-background border border-border rounded-sm px-3 py-2.5 text-sm font-mono text-foreground focus:outline-none focus:border-terminal-red/50 focus:ring-1 focus:ring-terminal-red/20"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground uppercase tracking-wider">
               Dispute Reason
             </label>
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Describe the reason for dispute..."
-              maxLength={1000}
+              maxLength={100}
               rows={4}
               className="w-full bg-background border border-border rounded-sm px-3 py-2.5 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-terminal-red/50 focus:ring-1 focus:ring-terminal-red/20 resize-none"
             />
@@ -48,37 +165,40 @@ const DisputePanel = () => {
           <Button
             type="submit"
             variant="destructive"
+            disabled={loading}
             className="w-full uppercase tracking-widest text-xs py-5 rounded-sm font-bold"
           >
-            ▸ {t("OPEN DISPUTE")}
+            {loading ? "PROCESSING..." : `▸ ${t("OPEN DISPUTE")}`}
           </Button>
         </form>
       </div>
 
       {/* Oracle verdict */}
-      <div className="border border-border bg-card rounded-sm border-glow">
-        <div className="px-4 py-2 border-b border-border bg-secondary/50">
-          <span className="text-xs text-terminal-cyan uppercase tracking-widest">
-            ▸ {t("ORACLE VERDICT")}
-          </span>
-        </div>
+      {oracleVerdict && (
+        <div className="border border-border bg-card rounded-sm border-glow">
+          <div className="px-4 py-2 border-b border-border bg-secondary/50">
+            <span className="text-xs text-terminal-cyan uppercase tracking-widest">
+              ▸ {t("ORACLE VERDICT")}
+            </span>
+          </div>
 
-        <div className="p-4">
-          <div className="border border-terminal-cyan/20 bg-terminal-cyan/5 rounded-sm p-4 space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-terminal-cyan uppercase tracking-widest font-semibold">
-                Result
-              </span>
-              <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-sm border font-bold bg-terminal-green/15 text-terminal-green border-terminal-green/30">
-                RELEASE
-              </span>
+          <div className="p-4">
+            <div className={`border rounded-sm p-4 space-y-2 ${oracleVerdict.verdict === 'RELEASE' ? 'border-terminal-cyan/20 bg-terminal-cyan/5' : 'border-terminal-red/20 bg-terminal-red/5'}`}>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase tracking-widest font-semibold">
+                  Result
+                </span>
+                <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-sm border font-bold ${oracleVerdict.verdict === 'RELEASE' ? 'bg-terminal-green/15 text-terminal-green border-terminal-green/30' : 'bg-terminal-red/15 text-terminal-red border-terminal-red/30'}`}>
+                  {oracleVerdict.verdict || "UNKNOWN"}
+                </span>
+              </div>
+              <p className="text-xs text-foreground leading-relaxed">
+                {oracleVerdict.reason || JSON.stringify(oracleVerdict)}
+              </p>
             </div>
-            <p className="text-xs text-foreground leading-relaxed">
-              PAYEE — Delivery verified at 94% confidence. Funds released.
-            </p>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
