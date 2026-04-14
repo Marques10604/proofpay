@@ -1,19 +1,133 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { Connection, Keypair } from '@solana/web3.js';
-import { AnchorProvider, Wallet, utils } from '@coral-xyz/anchor';
-import { ProofPayClient } from '@proofpay/sdk';
+import { Connection, Keypair, PublicKey } from '@solana/web3.js';
+import { AnchorProvider, Wallet, BN, Program } from '@coral-xyz/anchor';
+import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { createClient } from '@supabase/supabase-js';
 import 'dotenv/config';
+import { Buffer } from 'buffer';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SDK Types (Inlined for standalone deploy)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ResolveDisputeParams {
+  escrowId: Uint8Array;
+  releaseToPayee: boolean;
+  oracleKeypair: Keypair;
+}
+
+const PROOFPAY_IDL: any = {
+  version: "0.1.0",
+  name: "proofpay",
+  instructions: [
+    {
+      name: "resolveDispute",
+      accounts: [
+        { name: "escrow", isMut: true, isSigner: false },
+        { name: "oracle", isMut: false, isSigner: true },
+        { name: "payer", isMut: true, isSigner: false },
+        { name: "payee", isMut: true, isSigner: false },
+        { name: "vault", isMut: true, isSigner: false },
+        { name: "payeeTokenAccount", isMut: true, isSigner: false },
+        { name: "payerTokenAccount", isMut: true, isSigner: false },
+        { name: "usdcMint", isMut: false, isSigner: false },
+        { name: "tokenProgram", isMut: false, isSigner: false },
+      ],
+      args: [{ name: "releaseToPayee", type: "bool" }],
+    },
+  ],
+  accounts: [
+    {
+      name: "EscrowAccount",
+      type: {
+        kind: "struct",
+        fields: [
+          { name: "escrowId", type: { array: ["u8", 32] } },
+          { name: "payer", type: "publicKey" },
+          { name: "payee", type: "publicKey" },
+          { name: "usdcMint", type: "publicKey" },
+          { name: "totalAmount", type: "u64" },
+          { name: "releasedAmount", type: "u64" },
+          { name: "state", type: { defined: "EscrowState" } },
+        ],
+      },
+    },
+  ],
+  types: [
+    {
+      name: "EscrowState",
+      type: {
+        kind: "enum",
+        variants: [
+          { name: "Created" },
+          { name: "Funded" },
+          { name: "Completed" },
+          { name: "Refunded" },
+          { name: "Disputed" },
+        ],
+      },
+    },
+  ],
+};
+
+class ProofPayClient {
+  private connection: Connection;
+  private programId: PublicKey;
+  private program: Program;
+
+  constructor(rpcUrl: string, provider: AnchorProvider) {
+    this.connection = new Connection(rpcUrl, "confirmed");
+    this.programId = new PublicKey("FpN5kH3w6kVLDEHz1zUfSof2n2QfMKfENCE97LMiut6i");
+    this.program = new Program(PROOFPAY_IDL, provider as any);
+  }
+
+  async getEscrowPDA(escrowId: Uint8Array): Promise<PublicKey> {
+    const [pda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("escrow"), Buffer.from(escrowId)],
+      this.programId
+    );
+    return pda;
+  }
+
+  async getEscrow(escrowId: Uint8Array): Promise<any> {
+    const pda = await this.getEscrowPDA(escrowId);
+    return await this.program.account.escrowAccount.fetch(pda);
+  }
+
+  async resolveDispute(params: ResolveDisputeParams): Promise<string> {
+    const escrow = await this.getEscrow(params.escrowId);
+    const pda = await this.getEscrowPDA(params.escrowId);
+    const vault = getAssociatedTokenAddressSync(escrow.usdcMint, pda, true);
+    const payeeTokenAccount = getAssociatedTokenAddressSync(escrow.usdcMint, escrow.payee);
+    const payerTokenAccount = getAssociatedTokenAddressSync(escrow.usdcMint, escrow.payer);
+
+    return this.program.methods
+      .resolveDispute(params.releaseToPayee)
+      .accounts({
+        escrow: pda,
+        oracle: params.oracleKeypair.publicKey,
+        payer: escrow.payer,
+        payee: escrow.payee,
+        vault,
+        payeeTokenAccount,
+        payerTokenAccount,
+        usdcMint: escrow.usdcMint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      } as any)
+      .signers([params.oracleKeypair])
+      .rpc();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Server Logic
+// ─────────────────────────────────────────────────────────────────────────────
 
 const app = new Hono();
-
-// 8. Adicionar middleware CORS para aceitar requests de qualquer origem
 app.use('/*', cors());
 
-import { createClient } from '@supabase/supabase-js';
-
-// 9. Processar variáveis de ambiente
 const ORACLE_PRIVATE_KEY = process.env.ORACLE_PRIVATE_KEY;
 const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL || 'https://api.devnet.solana.com';
 const ORACLE_WALLET_ADDRESS = process.env.ORACLE_WALLET_ADDRESS;
@@ -22,61 +136,36 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
 if (!ORACLE_PRIVATE_KEY || !ORACLE_WALLET_ADDRESS) {
-  console.error("Missing required environment variables: ORACLE_PRIVATE_KEY or ORACLE_WALLET_ADDRESS");
+  console.error("Missing required environment variables");
   process.exit(1);
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-// Inicializar configuração Solana
-let oracleKeypair: Keypair;
-try {
-  oracleKeypair = Keypair.fromSecretKey(new Uint8Array(JSON.parse(ORACLE_PRIVATE_KEY)));
-} catch (e) {
-  console.error("Invalid ORACLE_PRIVATE_KEY format. Must be a JSON array of numbers.");
-  process.exit(1);
-}
-
+const oracleKeypair = Keypair.fromSecretKey(new Uint8Array(JSON.parse(ORACLE_PRIVATE_KEY)));
 const connection = new Connection(SOLANA_RPC_URL, 'confirmed');
 
-// Cria classe Wallet compatível com o AnchorProvider
 class NodeWallet implements Wallet {
   constructor(readonly payer: Keypair) {}
-  async signTransaction<T extends import("@solana/web3.js").Transaction | import("@solana/web3.js").VersionedTransaction>(tx: T): Promise<T> {
-    if ("version" in tx) {
-        tx.sign([this.payer]);
-    } else {
-        tx.sign(this.payer as any);
-    }
+  async signTransaction<T extends any>(tx: T): Promise<T> {
+    if ("version" in tx) tx.sign([this.payer]); else tx.sign(this.payer as any);
     return tx;
   }
-  async signAllTransactions<T extends import("@solana/web3.js").Transaction | import("@solana/web3.js").VersionedTransaction>(txs: T[]): Promise<T[]> {
+  async signAllTransactions<T extends any>(txs: T[]): Promise<T[]> {
     return Promise.all(txs.map((tx) => this.signTransaction(tx)));
   }
-  get publicKey() {
-    return this.payer.publicKey;
-  }
+  get publicKey() { return this.payer.publicKey; }
 }
 
-const wallet = new NodeWallet(oracleKeypair);
-const provider = new AnchorProvider(connection, wallet as any, { commitment: 'confirmed' });
-const client = new ProofPayClient({ rpcUrl: SOLANA_RPC_URL, provider });
+const provider = new AnchorProvider(connection, new NodeWallet(oracleKeypair), { commitment: 'confirmed' });
+const client = new ProofPayClient(SOLANA_RPC_URL, provider);
 
-// Health Check
 app.get('/health', (c) => c.json({ status: 'ok', timestamp: Date.now() }));
 
-// Oracle Evaluate Endpoint
 app.post('/oracle/evaluate', async (c) => {
-  const body = await c.req.json();
-  const { escrow_id, evidence, escrow_pda } = body;
-
-  if (!escrow_id || !evidence || !escrow_pda) {
-    return c.json({ error: "escrow_id, evidence and escrow_pda are required" }, 400);
-  }
-
-  // AI Decision via Claude
-  let aiDecision: { decision: 'approve' | 'reject'; confidence: number; reason: string };
   try {
+    const { escrow_id, evidence, escrow_pda } = await c.req.json();
+    if (!escrow_id || !evidence || !escrow_pda) return c.json({ error: "Missing fields" }, 400);
+
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -85,7 +174,7 @@ app.post('/oracle/evaluate', async (c) => {
         "content-type": "application/json"
       },
       body: JSON.stringify({
-        model: "claude-3-5-haiku-20241022", // Use a valid manifest name if needed
+        model: "claude-3-5-haiku-20241022",
         max_tokens: 1024,
         messages: [{
           role: "user",
@@ -97,156 +186,23 @@ Respond ONLY with JSON: {decision: 'approve'|'reject', confidence: 0-100, reason
     });
 
     const completion = await response.json() as any;
-    const content = completion.content[0].text;
-    aiDecision = JSON.parse(content);
-  } catch (e) {
-    console.error("AI Decision failed", e);
-    return c.json({ error: "AI Arbitration failed" }, 500);
-  }
+    const aiDecision = JSON.parse(completion.content[0].text);
 
-  if (aiDecision.decision === 'approve') {
-    try {
-      // Formatar array de bytes do escrow_id
-      const escrowIdBytes = Array.isArray(escrow_id) 
-        ? new Uint8Array(escrow_id) 
-        : new Uint8Array(Object.values(escrow_id));
-
-      const txid = await client.resolveDispute({
-        escrowId: escrowIdBytes,
-        releaseToPayee: true,
-        oracleKeypair: oracleKeypair
-      });
-
-      await supabase.from("oracle_decisions").insert({
-        escrow_pda,
-        decision: 'approve',
-        confidence: aiDecision.confidence,
-        reason: aiDecision.reason,
-        tx_signature: txid
-      });
-
+    if (aiDecision.decision === 'approve') {
+      const escrowIdBytes = Array.isArray(escrow_id) ? new Uint8Array(escrow_id) : new Uint8Array(Object.values(escrow_id));
+      const txid = await client.resolveDispute({ escrowId: escrowIdBytes, releaseToPayee: true, oracleKeypair });
+      await supabase.from("oracle_decisions").insert({ escrow_pda, decision: 'approve', confidence: aiDecision.confidence, reason: aiDecision.reason, tx_signature: txid });
       return c.json({ status: "success", decision: "approve", txid });
-    } catch (err: any) {
-      return c.json({ error: err.message }, 500);
+    } else {
+      await supabase.from("oracle_decisions").insert({ escrow_pda, decision: 'reject', confidence: aiDecision.confidence, reason: aiDecision.reason, status: 'pending_human_review' });
+      return c.json({ status: "rejected", reason: aiDecision.reason }, 402, {
+        'X-PAYMENT-REQUIRED': JSON.stringify({ price: "10", currency: "USDC", scheme: "exact", network: "solana", payTo: ORACLE_WALLET_ADDRESS, resource: "dispute_appeal" })
+      });
     }
-  } else {
-    // Decision is reject
-    await supabase.from("oracle_decisions").insert({
-      escrow_pda,
-      decision: 'reject',
-      confidence: aiDecision.confidence,
-      reason: aiDecision.reason,
-      status: 'pending_human_review'
-    });
-
-    return c.json({ status: "rejected", reason: aiDecision.reason }, 402, {
-      'X-PAYMENT-REQUIRED': JSON.stringify({
-        price: "10",
-        currency: "USDC",
-        scheme: "exact",
-        network: "solana",
-        payTo: ORACLE_WALLET_ADDRESS,
-        resource: "dispute_appeal"
-      })
-    });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
   }
-});
-
-// 1. Rota POST /resolve
-app.post('/resolve', async (c) => {
-  // 2. Verificar header X-PAYMENT no request
-  const paymentHeader = c.req.header('X-PAYMENT');
-
-  if (!paymentHeader) {
-    // 3. Retornar status 402 com header X-PAYMENT-REQUIRED
-    return c.json({ error: "Payment required" }, 402, {
-      'X-PAYMENT-REQUIRED': JSON.stringify({
-        price: "5",
-        currency: "USDC",
-        network: "solana",
-        payTo: ORACLE_WALLET_ADDRESS
-      })
-    });
-  }
-
-  // 4. Validar assinatura com connection.getTransaction()
-  let signature = paymentHeader;
-  try {
-    const decodedVal = Buffer.from(paymentHeader, 'base64').toString('utf8');
-    const parsed = JSON.parse(decodedVal);
-    if (parsed.payload && parsed.payload.signature) {
-      const sigBuffer = Buffer.from(parsed.payload.signature, 'base64');
-      // converter para string base58
-      signature = utils.bytes.bs58.encode(sigBuffer);
-    }
-  } catch (e) {
-    // Header não é x402 valid json -> assumir que é raw signature (Fallback)
-  }
-
-  try {
-    const tx = await connection.getTransaction(signature, {
-      commitment: 'confirmed',
-      maxSupportedTransactionVersion: 0
-    });
-    if (!tx) {
-        return c.json({ error: "Transaction not found or not confirmed" }, 400);
-    }
-  } catch (err) {
-    console.error("Transaction API Error:", err);
-    return c.json({ error: "Invalid transaction signature or network error" }, 400);
-  }
-
-  // Parse Body
-  let body;
-  try {
-    body = await c.req.json();
-  } catch (e) {
-    return c.json({ error: "Invalid JSON body" }, 400);
-  }
-
-  const { escrow_id, release_to_payee } = body;
-  
-  if (!escrow_id || release_to_payee === undefined) {
-    return c.json({ error: "escrow_id and release_to_payee are required" }, 400);
-  }
-
-  // Formatar array de bytes do escrow_id
-  let escrowIdBytes: Uint8Array;
-  try {
-      if (Array.isArray(escrow_id)) {
-          escrowIdBytes = new Uint8Array(escrow_id);
-      } else {
-          escrowIdBytes = new Uint8Array(Object.values(escrow_id));
-      }
-      if (escrowIdBytes.length !== 32) throw new Error("Invalid length");
-  } catch (e) {
-      return c.json({ error: "escrow_id must be a 32-byte array" }, 400);
-  }
-
-  // 5. Ler o estado do escrow via getEscrow()
-  const escrow = await client.getEscrow(escrowIdBytes);
-  if (!escrow) {
-    return c.json({ error: "Escrow not found" }, 404);
-  }
-
-  // 6. Verificar que o estado é disputed antes de prosseguir
-  if (escrow.state !== "disputed") {
-    return c.json({ error: `Escrow is not in disputed state. Current state: ${escrow.state}` }, 400);
-  }
-
-  // 7. Retornar JSON com o veredito
-  return c.json({
-    escrow_id,
-    verdict: release_to_payee ? "payee" : "payer",
-    reason: escrow.disputeReason,
-    timestamp: Date.now()
-  });
 });
 
 const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
-serve({
-  fetch: app.fetch,
-  port
-}, (info) => {
-  console.log(`x402 Server running on http://localhost:${info.port}`);
-});
+serve({ fetch: app.fetch, port }, (info) => console.log(`Oracle running on port ${info.port}`));
