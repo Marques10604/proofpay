@@ -83,7 +83,11 @@ class ProofPayClient {
     this.connection = new Connection(rpcUrl, "confirmed");
     this.programId = new PublicKey("FpN5kH3w6kVLDEHz1zUfSof2n2QfMKfENCE97LMiut6i");
     // Anchor 0.30.x: Program(idl, provider)
-    this.program = new Program(PROOFPAY_IDL as any, provider as any);
+    // Needs address field in IDL to avoid undefined _bn crash
+    this.program = new Program(
+      { ...PROOFPAY_IDL, address: this.programId.toString() } as any, 
+      provider as any
+    );
   }
 
   async getEscrowPDA(escrowId: Uint8Array): Promise<PublicKey> {
