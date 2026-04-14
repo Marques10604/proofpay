@@ -124,7 +124,11 @@ const CreateEscrow = () => {
       transaction.feePayer = publicKey;
 
       const signed = await signTransaction(transaction);
-      const txid = await connection.sendRawTransaction(signed.serialize());
+      const txid = await connection.sendRawTransaction(signed.serialize(), {
+        skipPreflight: false,
+        preflightCommitment: 'confirmed',
+        maxRetries: 3
+      });
       setTxHash(txid);
       
       const vaultAta = getAssociatedTokenAddressSync(DEVNET_USDC, escrowPda, true);
@@ -163,7 +167,11 @@ const CreateEscrow = () => {
       fundTransaction.feePayer = publicKey;
 
       const signedFund = await signTransaction(fundTransaction);
-      await connection.sendRawTransaction(signedFund.serialize());
+      await connection.sendRawTransaction(signedFund.serialize(), {
+        skipPreflight: false,
+        preflightCommitment: 'confirmed',
+        maxRetries: 3
+      });
       
       await supabase.from('escrows').insert({
         escrow_id: Array.from(escrowId),
