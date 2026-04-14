@@ -20,7 +20,7 @@ const PROGRAM_ID = new PublicKey("FpN5kH3w6kVLDEHz1zUfSof2n2QfMKfENCE97LMiut6i")
 const DEVNET_USDC = new PublicKey("Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr");
 const RELEASE_MILESTONE_DISCRIMINATOR = Buffer.from([56, 2, 199, 164, 184, 108, 167, 222]);
 
-const EscrowMonitor = () => {
+const EscrowMonitor = ({ onOpenDispute }: { onOpenDispute?: (pda: string, id: string) => void }) => {
   const { t } = useLanguage();
   const { connection } = useConnection();
   const { publicKey, signTransaction } = useWallet();
@@ -193,6 +193,7 @@ const EscrowMonitor = () => {
                   </Button>
                   <Button
                     variant="destructive"
+                    onClick={() => onOpenDispute && onOpenDispute(escrow.pda_address, escrow.escrow_id_hex)}
                     className="text-[10px] uppercase tracking-widest rounded-sm h-8 px-4 font-bold"
                   >
                     ⚠ {t("OPEN DISPUTE")}

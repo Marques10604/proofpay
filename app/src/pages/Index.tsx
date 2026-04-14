@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import "@solana/wallet-adapter-react-ui/styles.css";
 
 import TerminalHeader from "@/components/TerminalHeader";
@@ -9,6 +9,7 @@ import { LanguageProvider } from "@/lib/LanguageContext";
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("create");
+  const [disputeData, setDisputeData] = useState({ pda: "", id: "" });
 
   return (
     <LanguageProvider>
@@ -25,8 +26,20 @@ const Index = () => {
         {/* Content */}
         <main className="flex-1 overflow-auto">
           {activeTab === "create" && <CreateEscrow />}
-          {activeTab === "monitor" && <EscrowMonitor />}
-          {activeTab === "dispute" && <DisputePanel />}
+          {activeTab === "monitor" && (
+            <EscrowMonitor 
+              onOpenDispute={(pda, id) => {
+                setDisputeData({ pda, id });
+                setActiveTab("dispute");
+              }} 
+            />
+          )}
+          {activeTab === "dispute" && (
+            <DisputePanel 
+              initialPda={disputeData.pda} 
+              initialId={disputeData.id} 
+            />
+          )}
         </main>
 
         {/* Footer */}

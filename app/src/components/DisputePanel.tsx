@@ -8,11 +8,16 @@ import { Buffer } from "buffer";
 
 const PROGRAM_ID = new PublicKey("FpN5kH3w6kVLDEHz1zUfSof2n2QfMKfENCE97LMiut6i");
 
-const DisputePanel = () => {
+interface DisputePanelProps {
+  initialPda?: string;
+  initialId?: string;
+}
+
+const DisputePanel = ({ initialPda = "", initialId = "" }: DisputePanelProps) => {
   const { t } = useLanguage();
   const [reason, setReason] = useState("");
-  const [escrowPda, setEscrowPda] = useState("");
-  const [escrowId, setEscrowId] = useState("");
+  const [escrowPda, setEscrowPda] = useState(initialPda);
+  const [escrowId, setEscrowId] = useState(initialId);
   const [oracleVerdict, setOracleVerdict] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
