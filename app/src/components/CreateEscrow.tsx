@@ -66,7 +66,7 @@ const CreateEscrow = () => {
       setErrorMsg("");
       
       // Generate random 32-byte identity for escrow
-      const escrowId = crypto.getRandomValues(new Uint8Array(32));
+      const escrowId = crypto.getRandomValues(new Uint8Array(32)); // generated randomly per tx
 
       // Derive PDA: ["escrow", escrowId]
       const [escrowPda] = PublicKey.findProgramAddressSync(
