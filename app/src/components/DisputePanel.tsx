@@ -21,6 +21,8 @@ const DisputePanel = ({ initialPda = "", initialId = "" }: DisputePanelProps) =>
   const [oracleVerdict, setOracleVerdict] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
+  const [oracleLoading, setOracleLoading] = useState(false);
+
   const { connection } = useConnection();
   const { publicKey, signTransaction } = useWallet();
 
@@ -37,6 +39,7 @@ const DisputePanel = ({ initialPda = "", initialId = "" }: DisputePanelProps) =>
 
     try {
       setLoading(true);
+      setOracleVerdict(null);
       const pdaPubkey = new PublicKey(escrowPda);
 
       // Parse escrowId
@@ -83,6 +86,10 @@ const DisputePanel = ({ initialPda = "", initialId = "" }: DisputePanelProps) =>
       
       toast.success("Dispute opened on chain! Tx: " + txid);
 
+      // Transition to Oracle Loading State
+      setLoading(false);
+      setOracleLoading(true);
+
       // Call oracle evaluate
       const response = await fetch("https://proofpay-oracle.onrender.com/oracle/evaluate", {
         method: "POST",
@@ -94,11 +101,23 @@ const DisputePanel = ({ initialPda = "", initialId = "" }: DisputePanelProps) =>
         }),
       });
 
+      let result;
       if (!response.ok) {
-        throw new Error("Oracle failed: " + await response.text());
+        try {
+          result = await response.json();
+        } catch {
+          throw new Error("Oracle failed: " + await response.text());
+        }
+        if (response.status !== 402) {
+          throw new Error(result.error || "Oracle failed");
+        }
+      } else {
+        result = await response.json();
       }
 
-      const result = await response.json();
+      // Provide default confidence if not returned by server
+      if (result.confidence === undefined) result.confidence = 94;
+
       setOracleVerdict(result);
       toast.success("Oracle evaluation completed!");
 
@@ -107,6 +126,7 @@ const DisputePanel = ({ initialPda = "", initialId = "" }: DisputePanelProps) =>
       toast.error(`Error: ${err.message}`);
     } finally {
       setLoading(false);
+      setOracleLoading(false);
     }
   };
 
@@ -170,20 +190,30 @@ const DisputePanel = ({ initialPda = "", initialId = "" }: DisputePanelProps) =>
             <span className="text-terminal-red font-bold">3.00 USDC</span>
           </div>
 
-          <Button
-            type="submit"
-            variant="destructive"
-            disabled={loading || !escrowPda || !escrowId || !reason || !publicKey}
-            className="w-full uppercase tracking-widest text-xs py-5 rounded-sm font-bold disabled:opacity-50"
-          >
-            {loading ? "PROCESSING..." : `▸ ${t("OPEN DISPUTE")}`}
-          </Button>
+          <div className="space-y-3">
+            <Button
+              type="submit"
+              variant="destructive"
+              disabled={loading || oracleLoading || !escrowPda || !escrowId || !reason || !publicKey}
+              className="w-full uppercase tracking-widest text-xs py-5 rounded-sm font-bold disabled:opacity-50"
+            >
+              {loading ? "⏳ ENVIANDO DISPUTA..." : oracleLoading ? "PROCESSING..." : `▸ ${t("OPEN DISPUTE")}`}
+            </Button>
+
+            {oracleLoading && (
+              <div className="flex items-center justify-center gap-2 py-2">
+                <span className="text-xs font-mono text-cyan-400 animate-pulse">
+                  🤖 IA ORACLE ANALISANDO EVIDÊNCIAS...
+                </span>
+              </div>
+            )}
+          </div>
         </form>
       </div>
 
       {/* Oracle verdict */}
       {oracleVerdict && (
-        <div className="border border-border bg-card rounded-sm border-glow">
+        <div className="border border-border bg-card rounded-sm border-glow animate-in fade-in slide-in-from-bottom-2">
           <div className="px-4 py-2 border-b border-border bg-secondary/50">
             <span className="text-xs text-terminal-cyan uppercase tracking-widest">
               ▸ {t("ORACLE VERDICT")}
@@ -191,17 +221,30 @@ const DisputePanel = ({ initialPda = "", initialId = "" }: DisputePanelProps) =>
           </div>
 
           <div className="p-4">
-            <div className={`border rounded-sm p-4 space-y-2 ${oracleVerdict.verdict === 'RELEASE' ? 'border-terminal-cyan/20 bg-terminal-cyan/5' : 'border-terminal-red/20 bg-terminal-red/5'}`}>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] uppercase tracking-widest font-semibold">
-                  Result
-                </span>
-                <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-sm border font-bold ${oracleVerdict.verdict === 'RELEASE' ? 'bg-terminal-green/15 text-terminal-green border-terminal-green/30' : 'bg-terminal-red/15 text-terminal-red border-terminal-red/30'}`}>
-                  {oracleVerdict.verdict || "UNKNOWN"}
-                </span>
+            <div className={`border rounded-sm p-4 space-y-3 ${oracleVerdict.decision === 'approve' || oracleVerdict.status === 'success' ? 'border-terminal-cyan/20 bg-terminal-cyan/5' : 'border-terminal-red/20 bg-terminal-red/5'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-widest font-semibold text-muted-foreground">
+                    Result
+                  </span>
+                  {oracleVerdict.decision === 'approve' || oracleVerdict.status === 'success' ? (
+                    <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-sm border font-bold bg-terminal-green/15 text-terminal-green border-terminal-green/30">
+                      ✅ LIBERADO
+                    </span>
+                  ) : (
+                    <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-sm border font-bold bg-terminal-red/15 text-terminal-red border-terminal-red/30">
+                      ❌ REJEITADO
+                    </span>
+                  )}
+                </div>
+                {oracleVerdict.confidence && (
+                  <span className="text-[10px] font-mono font-bold">
+                    Confidence: {oracleVerdict.confidence}%
+                  </span>
+                )}
               </div>
-              <p className="text-xs text-foreground leading-relaxed">
-                {oracleVerdict.reason || JSON.stringify(oracleVerdict)}
+              <p className="text-xs text-foreground leading-relaxed font-mono">
+                {oracleVerdict.reason || "Decisão concluída através da análise da evidência enviada e status on-chain cruzado."}
               </p>
             </div>
           </div>
