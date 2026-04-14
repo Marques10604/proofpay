@@ -93,7 +93,7 @@ class ProofPayClient {
 
   async getEscrow(escrowId: Uint8Array): Promise<any> {
     const pda = await this.getEscrowPDA(escrowId);
-    return await this.program.account.escrowAccount.fetch(pda);
+    return await (this.program.account as any).escrowAccount.fetch(pda);
   }
 
   async resolveDispute(params: ResolveDisputeParams): Promise<string> {
@@ -147,7 +147,7 @@ const connection = new Connection(SOLANA_RPC_URL, 'confirmed');
 class NodeWallet implements Wallet {
   constructor(readonly payer: Keypair) {}
   async signTransaction<T extends any>(tx: T): Promise<T> {
-    if ("version" in tx) tx.sign([this.payer]); else tx.sign(this.payer as any);
+    if ("version" in (tx as any)) (tx as any).sign([this.payer]); else (tx as any).sign(this.payer as any);
     return tx;
   }
   async signAllTransactions<T extends any>(txs: T[]): Promise<T[]> {

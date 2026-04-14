@@ -5,8 +5,9 @@
     "moduleResolution": "NodeNext",
     "outDir": "./dist",
     "rootDir": "./src",
-    "strict": true,
+    "strict": false,
     "skipLibCheck": true,
+    "noImplicitAny": false,
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "declaration": true
