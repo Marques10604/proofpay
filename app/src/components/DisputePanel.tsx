@@ -55,6 +55,9 @@ const DisputePanel = () => {
       reasonBuffer.write(reason, 0, "utf-8");
 
       const data = Buffer.concat([discriminator, reasonBuffer]);
+      
+      console.log("Escrow PDA:", escrowPda);
+      console.log("Reason:", reason);
 
       const instruction = new TransactionInstruction({
         keys: [
@@ -119,26 +122,26 @@ const DisputePanel = () => {
 
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground uppercase tracking-wider">
-              Escrow PDA
+              ESCROW PDA ADDRESS
             </label>
             <input
               type="text"
               value={escrowPda}
               onChange={(e) => setEscrowPda(e.target.value)}
-              placeholder="e.g. 5xV..."
+              placeholder="5Y2VnYs..."
               className="w-full bg-background border border-border rounded-sm px-3 py-2.5 text-sm font-mono text-foreground focus:outline-none focus:border-terminal-red/50 focus:ring-1 focus:ring-terminal-red/20"
             />
           </div>
 
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground uppercase tracking-wider">
-              Escrow ID (Hex or array)
+              ESCROW ID
             </label>
             <input
               type="text"
               value={escrowId}
               onChange={(e) => setEscrowId(e.target.value)}
-              placeholder="e.g. 0x12ab... or [1, 2, ...]"
+              placeholder="Array JSON [0,1,2...] ou hex string"
               className="w-full bg-background border border-border rounded-sm px-3 py-2.5 text-sm font-mono text-foreground focus:outline-none focus:border-terminal-red/50 focus:ring-1 focus:ring-terminal-red/20"
             />
           </div>
@@ -165,8 +168,8 @@ const DisputePanel = () => {
           <Button
             type="submit"
             variant="destructive"
-            disabled={loading}
-            className="w-full uppercase tracking-widest text-xs py-5 rounded-sm font-bold"
+            disabled={loading || !escrowPda || !escrowId || !reason || !publicKey}
+            className="w-full uppercase tracking-widest text-xs py-5 rounded-sm font-bold disabled:opacity-50"
           >
             {loading ? "PROCESSING..." : `▸ ${t("OPEN DISPUTE")}`}
           </Button>
