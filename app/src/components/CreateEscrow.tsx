@@ -173,19 +173,25 @@ const CreateEscrow = () => {
         maxRetries: 3
       });
       
-      await supabase.from('escrows').insert({
-        escrow_id: Array.from(escrowId),
-        pda_address: escrowPda.toString(),
-        payer_address: publicKey.toString(),
-        payee_address: payeePubkey.toString(),
-        oracle_address: oraclePubkey.toString(),
-        usdc_mint: DEVNET_USDC.toString(),
-        total_amount: amount.toString(),
-        status: 'funded',
-        milestone_description: form.milestone || "Deliverable 1",
-        created_at: new Date().toISOString(),
-        tx_signature: txid
-      });
+      const { data: insertData, error: insertError } = await supabase
+        .from('escrows')
+        .insert({
+          escrow_id: Array.from(escrowId),
+          pda_address: escrowPda.toString(),
+          payer_address: publicKey.toString(),
+          payee_address: payeePubkey.toString(),
+          oracle_address: oraclePubkey.toString(),
+          usdc_mint: DEVNET_USDC.toString(),
+          total_amount: amount.toString(),
+          status: 'funded',
+          milestone_description: form.milestone || "Deliverable 1",
+          created_at: new Date().toISOString(),
+          tx_signature: txid
+        });
+      console.log("Supabase insert result:", insertData, insertError);
+      if (insertError) {
+        console.error("Supabase error:", insertError.message, insertError.code);
+      }
 
       setStatus("success");
       toast.success("Contract initialized and funded!");
