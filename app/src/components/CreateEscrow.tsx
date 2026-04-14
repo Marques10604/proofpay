@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import { Buffer } from "buffer";
 import PROOFPAY_IDL from "../idl/proofpay.json";
+import { supabase } from "@/lib/supabase";
 
 const PROGRAM_ID = new PublicKey("FpN5kH3w6kVLDEHz1zUfSof2n2QfMKfENCE97LMiut6i");
 const DEVNET_USDC = new PublicKey("Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr");
@@ -164,6 +165,20 @@ const CreateEscrow = () => {
       const signedFund = await signTransaction(fundTransaction);
       await connection.sendRawTransaction(signedFund.serialize());
       
+      await supabase.from('escrows').insert({
+        escrow_id: Array.from(escrowId),
+        pda_address: escrowPda.toString(),
+        payer_address: publicKey.toString(),
+        payee_address: payeePubkey.toString(),
+        oracle_address: oraclePubkey.toString(),
+        usdc_mint: DEVNET_USDC.toString(),
+        total_amount: amount.toString(),
+        status: 'funded',
+        milestone_description: form.milestone || "Deliverable 1",
+        created_at: new Date().toISOString(),
+        tx_signature: txid
+      });
+
       setStatus("success");
       toast.success("Contract initialized and funded!");
       setTimeout(() => setStatus("idle"), 3000);
