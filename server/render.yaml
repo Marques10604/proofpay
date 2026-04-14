@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: proofpay-oracle
+    runtime: node
+    rootDir: server
+    buildCommand: npm install; npm run build
+    startCommand: node -r ./preload.cjs dist/index.js
+    envVars:
+      - key: NODE_VERSION
+        value: 20.15.1
