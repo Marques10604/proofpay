@@ -1,6 +1,7 @@
 {
   "name": "@proofpay/server",
   "version": "0.1.0",
+  "type": "module",
   "description": "x402-compatible HTTP server for ProofPay",
   "scripts": {
     "dev": "tsx watch src/index.ts",
