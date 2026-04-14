@@ -1,32 +1,9 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import path from "path";
-import { componentTagger } from "lovable-tagger";
-import { nodePolyfills } from "vite-plugin-node-polyfills";
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
 
-// https://vitejs.dev/config/
-export default defineConfig(({ mode }) => ({
-  server: {
-    host: "::",
-    port: 8080,
-    hmr: {
-      overlay: false,
-    },
+export default defineConfig({
+  plugins: [react()],
+  define: {
+    global: 'globalThis',
   },
-  plugins: [
-    react(), 
-    mode === "development" && componentTagger(),
-    nodePolyfills({
-      include: ["buffer", "process", "stream", "util"],
-    }),
-  ].filter(Boolean),
-  optimizeDeps: {
-    exclude: ["@coral-xyz/anchor"],
-  },
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
-    dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime", "@tanstack/react-query", "@tanstack/query-core"],
-  },
-}));
+})
