@@ -162,6 +162,13 @@ class NodeWallet implements Wallet {
 const provider = new AnchorProvider(connection, new NodeWallet(oracleKeypair), { commitment: 'confirmed' });
 const client = new ProofPayClient(SOLANA_RPC_URL, provider);
 
+app.get('/', (c) => c.json({ 
+  status: 'live', 
+  service: 'proofpay-oracle', 
+  version: '0.1.0', 
+  network: 'devnet' 
+}));
+
 app.get('/health', (c) => c.json({ status: 'ok', timestamp: Date.now() }));
 
 app.post('/oracle/evaluate', async (c) => {
