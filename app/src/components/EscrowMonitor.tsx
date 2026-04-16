@@ -39,6 +39,20 @@ const EscrowMonitor = ({ onOpenDispute }: { onOpenDispute?: (pda: string, id: st
       setDisputeModal(prev => ({ ...prev, loading: true }));
       const escrowPda = new PublicKey(disputeModal.escrow.pda_address);
       
+      const accountInfo = await connection.getAccountInfo(escrowPda);
+      if (!accountInfo) {
+        throw new Error("Escrow account not found on-chain");
+      }
+      
+      // EscrowAccount layout offset for 'state':
+      // 8 (disc) + 32*5 (id, payer, payee, oracle, mint) + 8*2 (total, released) + 4 (vec len) + 66 (m1) + 1 (cur_milestone) = 255
+      const stateByte = accountInfo.data[255];
+      if (stateByte !== 1) { // 1 = Funded
+        const states = ["Created", "Funded", "Completed", "Refunded", "Disputed"];
+        const currentState = states[stateByte] || "Unknown";
+        throw new Error(`Escrow state is ${currentState}. Needs to be 'Funded' to open a dispute.`);
+      }
+
       const reasonBuffer = Buffer.alloc(128);
       reasonBuffer.write(disputeReason.slice(0, 128), "utf8");
       const data = Buffer.concat([OPEN_DISPUTE_DISCRIMINATOR, reasonBuffer]);

@@ -213,11 +213,14 @@ const CreateEscrow = () => {
           created_at: createdAt,
           timeout_at: timeoutAt,
           bump,
-          last_tx_signature: txid,
-        });
-      console.log("Supabase insert result:", insertData, insertError);
+          last_tx_signature: fundTxId, // store the funding tx which confirms the 'funded' state
+        })
+        .select();
+
       if (insertError) {
         console.error("Supabase error:", insertError.message, insertError.code);
+      } else {
+        console.log("Supabase insert successful:", insertData);
       }
 
       setStatus("success");
