@@ -25,7 +25,7 @@ const Index = () => {
 
         {/* Content */}
         <main className="flex-1 overflow-auto">
-          {activeTab === "create" && <CreateEscrow />}
+          {activeTab === "create" && <CreateEscrow onSuccess={() => setActiveTab("monitor")} />}
           {activeTab === "monitor" && (
             <EscrowMonitor 
               onOpenDispute={(pda, id) => {
