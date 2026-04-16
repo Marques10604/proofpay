@@ -176,6 +176,9 @@ app.post('/oracle/evaluate', async (c) => {
     const { escrow_id, evidence, escrow_pda } = await c.req.json();
     if (!escrow_id || !evidence || !escrow_pda) return c.json({ error: "Missing fields" }, 400);
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -183,6 +186,7 @@ app.post('/oracle/evaluate', async (c) => {
         "anthropic-version": "2023-06-01",
         "content-type": "application/json"
       },
+      signal: controller.signal,
       body: JSON.stringify({
         model: "claude-sonnet-4-5",
         max_tokens: 1024,
@@ -192,7 +196,7 @@ app.post('/oracle/evaluate', async (c) => {
           content: `Evidence: ${evidence}`
         }]
       })
-    });
+    }).finally(() => clearTimeout(timeout));
 
     const completion = await response.json() as any;
     
@@ -221,9 +225,22 @@ app.post('/oracle/evaluate', async (c) => {
       return c.json({ status: "success", verdict: "payer", confidence: aiDecision.confidence, reasoning: aiDecision.reasoning, txid });
     }
   } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+    console.error("Oracle evaluate error:", e);
+    return c.json({ error: e.message === "This operation was aborted" ? "AI response timed out (30s)" : e.message }, 500);
   }
 });
 
 const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
-serve({ fetch: app.fetch, port }, (info) => console.log(`Oracle running on port ${info.port}`));
+serve({ fetch: app.fetch, port }, (info) => {
+  console.log(`Oracle running on port ${info.port}`);
+  
+  // Self-ping to prevent Render cold starts (every 10 minutes)
+  setInterval(async () => {
+    try {
+      await fetch("https://proofpay-oracle.onrender.com/health");
+      console.log(`[${new Date().toISOString()}] Self-ping successful`);
+    } catch (err) {
+      console.error("Self-ping failed:", err);
+    }
+  }, 10 * 60 * 1000); 
+});
