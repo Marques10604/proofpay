@@ -69,7 +69,7 @@ const CreateEscrow = () => {
       const escrowId = crypto.getRandomValues(new Uint8Array(32)); // generated randomly per tx
 
       // Derive PDA: ["escrow", escrowId]
-      const [escrowPda] = PublicKey.findProgramAddressSync(
+      const [escrowPda, bump] = PublicKey.findProgramAddressSync(
         [Buffer.from("escrow"), Buffer.from(escrowId)],
         PROGRAM_ID
       );
@@ -162,31 +162,39 @@ const CreateEscrow = () => {
         })
       );
 
-      const { blockhash: fundBh } = await connection.getLatestBlockhash();
+      const { blockhash: fundBh, lastValidBlockHeight: fundLvbh } = await connection.getLatestBlockhash();
       fundTransaction.recentBlockhash = fundBh;
       fundTransaction.feePayer = publicKey;
 
       const signedFund = await signTransaction(fundTransaction);
-      await connection.sendRawTransaction(signedFund.serialize(), {
+      const fundTxId = await connection.sendRawTransaction(signedFund.serialize(), {
         skipPreflight: false,
         preflightCommitment: 'confirmed',
         maxRetries: 3
       });
-      
+      // Wait for fund TX to confirm before writing to DB
+      await connection.confirmTransaction(
+        { signature: fundTxId, blockhash: fundBh, lastValidBlockHeight: fundLvbh },
+        'confirmed'
+      );
+
+      const createdAt = new Date().toISOString();
+      const timeoutAt = new Date(Date.now() + Number(timeoutSeconds) * 1000).toISOString();
+
       const { data: insertData, error: insertError } = await supabase
         .from('escrows')
         .insert({
-          escrow_id: Array.from(escrowId),
+          escrow_id_hex: Buffer.from(escrowId).toString('hex'),
           pda_address: escrowPda.toString(),
           payer_address: publicKey.toString(),
           payee_address: payeePubkey.toString(),
-          oracle_address: oraclePubkey.toString(),
           usdc_mint: DEVNET_USDC.toString(),
-          total_amount: amount.toString(),
+          total_amount: Number(amount),
           status: 'funded',
-          milestone_description: form.milestone || "Deliverable 1",
-          created_at: new Date().toISOString(),
-          tx_signature: txid
+          created_at: createdAt,
+          timeout_at: timeoutAt,
+          bump,
+          last_tx_signature: txid,
         });
       console.log("Supabase insert result:", insertData, insertError);
       if (insertError) {

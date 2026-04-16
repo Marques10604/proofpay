@@ -77,13 +77,20 @@ const DisputePanel = ({ initialPda = "", initialId = "" }: DisputePanelProps) =>
       });
 
       const transaction = new Transaction().add(instruction);
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
       transaction.recentBlockhash = blockhash;
       transaction.feePayer = publicKey;
 
       const signed = await signTransaction(transaction);
       const txid = await connection.sendRawTransaction(signed.serialize());
-      
+
+      // Wait for open_dispute TX to confirm before calling oracle —
+      // oracle's resolve_dispute will fail if escrow.state != Disputed on-chain yet
+      await connection.confirmTransaction(
+        { signature: txid, blockhash, lastValidBlockHeight },
+        'confirmed'
+      );
+
       toast.success("Dispute opened on chain! Tx: " + txid);
 
       // Transition to Oracle Loading State

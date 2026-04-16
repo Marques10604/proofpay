@@ -145,7 +145,7 @@ const EscrowMonitor = ({ onOpenDispute }: { onOpenDispute?: (pda: string, id: st
             <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-secondary/30">
               <div className="flex items-center gap-3">
                 <span className="text-[10px] text-muted-foreground font-mono">
-                  ID: {escrow.escrow_id_hex.slice(0, 8)}...
+                  ID: {(escrow.escrow_id_hex ?? 'N/A').slice(0, 8)}...
                 </span>
                 <span
                   className={`text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-sm border font-bold ${getStatusStyle(escrow.status)}`}
