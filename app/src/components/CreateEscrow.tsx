@@ -94,6 +94,10 @@ const CreateEscrow = ({ onSuccess }: { onSuccess?: () => void }) => {
       escrowPda = pda;
       bump = b;
 
+      const payeePubkey = new PublicKey(form.payee);
+      const oraclePubkey = new PublicKey(form.oracle);
+      const timeoutSeconds = BigInt((parseInt(form.timeout) || 30) * 86400);
+
       const accountInfo = await connection.getAccountInfo(escrowPda);
       if (accountInfo !== null) {
         toast.success("Contrato já criado com sucesso! Redirecionando...");
