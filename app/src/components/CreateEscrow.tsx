@@ -34,6 +34,7 @@ const CreateEscrow = () => {
   const [status, setStatus] = useState<"idle" | "processing" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
   const [showSummary, setShowSummary] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [form, setForm] = useState({
     amount: "",
@@ -59,6 +60,9 @@ const CreateEscrow = () => {
       toast.error("Please fill in all mandatory fields");
       return;
     }
+
+    if (isSubmitting) return;
+    setIsSubmitting(true);
 
     try {
       setLoading(true);
@@ -203,6 +207,14 @@ const CreateEscrow = () => {
 
       setStatus("success");
       toast.success("Contract initialized and funded!");
+      setForm({
+        amount: "",
+        payee: "",
+        oracle: "",
+        milestone: "",
+        timeout: "30",
+      });
+      setShowSummary(false);
       setTimeout(() => setStatus("idle"), 3000);
     } catch (error: any) {
       console.error(error);
@@ -211,6 +223,7 @@ const CreateEscrow = () => {
       toast.error(`Error: ${error.message}`);
     } finally {
       setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -363,7 +376,7 @@ const CreateEscrow = () => {
                   {status === "success" ? "CONTRACT INITIALIZED ✓" : "Transaction Sent"}
                 </span>
                 <a
-                  href={`https://solscan.io/tx/${txHash}?cluster=devnet`}
+                  href={`https://explorer.solana.com/tx/${txHash}?cluster=devnet`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs font-mono text-foreground hover:text-primary transition-colors underline break-all"
@@ -376,7 +389,7 @@ const CreateEscrow = () => {
             {!showSummary && (
               <Button
                 type="submit"
-                disabled={loading}
+                disabled={loading || isSubmitting}
                 className={`w-full font-bold uppercase tracking-widest text-xs py-5 rounded-sm transition-all
                   ${status === "success" ? "bg-terminal-green text-terminal-green-foreground" : "bg-primary text-primary-foreground hover:bg-primary/90"}
                 `}

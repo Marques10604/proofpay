@@ -19,11 +19,11 @@ const TerminalHeader = ({ activeTab, onTabChange }: TerminalHeaderProps) => {
 
   useEffect(() => {
     const fetchData = async () => {
-      // 1. SOL Price (Jupiter)
+      // 1. SOL Price (CoinGecko)
       try {
-        const res = await fetch("https://price.jup.ag/v4/price?ids=SOL");
+        const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd");
         const json = await res.json();
-        setSolPrice(json.data.SOL.price);
+        setSolPrice(json.solana.usd);
       } catch (e) { console.error("Price fetch failed"); }
 
       // 2. TPS (Solana)
