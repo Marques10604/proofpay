@@ -11,9 +11,17 @@ const Root = () => {
   const endpoint = useMemo(() => clusterApiUrl("devnet"), []);
   const wallets = useMemo(() => [new PhantomWalletAdapter()], []);
 
+  const onError = (error: any) => {
+    console.error("Wallet Error:", error);
+    // Suppress common errors that trigger disconnects in some adapters
+    if (error.name === "WalletSendTransactionError") {
+      console.log("Suppressing auto-disconnect for SendTransactionError");
+    }
+  };
+
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <WalletProvider wallets={wallets} autoConnect>
+      <WalletProvider wallets={wallets} autoConnect onError={onError}>
         <App />
       </WalletProvider>
     </ConnectionProvider>
