@@ -19,6 +19,7 @@ import { useLanguage } from "@/lib/LanguageContext";
 const PROGRAM_ID = new PublicKey("FpN5kH3w6kVLDEHz1zUfSof2n2QfMKfENCE97LMiut6i");
 const DEVNET_USDC = new PublicKey("Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr");
 const RELEASE_MILESTONE_DISCRIMINATOR = Buffer.from([56, 2, 199, 164, 184, 108, 167, 222]);
+const OPEN_DISPUTE_DISCRIMINATOR = Buffer.from([137, 25, 99, 119, 23, 223, 161, 42]);
 
 const EscrowMonitor = ({ onOpenDispute }: { onOpenDispute?: (pda: string, id: string) => void }) => {
   const { t } = useLanguage();
@@ -27,6 +28,61 @@ const EscrowMonitor = ({ onOpenDispute }: { onOpenDispute?: (pda: string, id: st
   const [loading, setLoading] = useState(false);
   const [escrows, setEscrows] = useState<any[]>([]);
   const [fetching, setFetching] = useState(true);
+
+  // Dispute Flow States
+  const [disputeModal, setDisputeModal] = useState<{ isOpen: boolean; escrow?: any; loading: boolean; verdict?: any }>({ isOpen: false, loading: false });
+  const [disputeReason, setDisputeReason] = useState("");
+
+  const handleOpenDisputeSubmit = async () => {
+    if (!disputeModal.escrow || !publicKey || !signTransaction) return;
+    try {
+      setDisputeModal(prev => ({ ...prev, loading: true }));
+      const escrowPda = new PublicKey(disputeModal.escrow.pda_address);
+      
+      const reasonBuffer = Buffer.alloc(128);
+      reasonBuffer.write(disputeReason.slice(0, 128), "utf8");
+      const data = Buffer.concat([OPEN_DISPUTE_DISCRIMINATOR, reasonBuffer]);
+      
+      const instruction = new TransactionInstruction({
+        keys: [
+          { pubkey: escrowPda, isSigner: false, isWritable: true },
+          { pubkey: publicKey, isSigner: true, isWritable: true }
+        ],
+        programId: PROGRAM_ID,
+        data
+      });
+      
+      const tx = new Transaction().add(instruction);
+      const { blockhash } = await connection.getLatestBlockhash();
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = publicKey;
+      
+      const signed = await signTransaction(tx);
+      const txid = await connection.sendRawTransaction(signed.serialize());
+      
+      toast.success("Transaction sent, waiting for confirmation...");
+      await connection.confirmTransaction(txid, 'confirmed');
+      toast.success("Transaction confirmed on-chain. Invoking Oracle...");
+
+      const res = await fetch("https://proofpay-oracle.onrender.com/oracle/evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          escrow_id: disputeModal.escrow.escrow_id_hex,
+          evidence: disputeReason,
+          disputed_by: publicKey.toString()
+        })
+      });
+      const result = await res.json();
+      
+      setDisputeModal(prev => ({ ...prev, loading: false, verdict: result }));
+      toast.success("Oracle evaluation completed!");
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || "Failed to open dispute");
+      setDisputeModal(prev => ({ ...prev, loading: false }));
+    }
+  };
 
   const fetchEscrows = async () => {
     try {
@@ -192,11 +248,11 @@ const EscrowMonitor = ({ onOpenDispute }: { onOpenDispute?: (pda: string, id: st
                     {loading ? "..." : t("RELEASE MILESTONE")}
                   </Button>
                   <Button
-                    variant="destructive"
-                    onClick={() => onOpenDispute && onOpenDispute(escrow.pda_address, escrow.escrow_id_hex)}
-                    className="text-[10px] uppercase tracking-widest rounded-sm h-8 px-4 font-bold"
+                    onClick={() => setDisputeModal({ isOpen: true, escrow, loading: false, verdict: null })}
+                    style={{ backgroundColor: "#F59E0B", color: "#000" }}
+                    className="text-[10px] uppercase tracking-widest rounded-sm h-8 px-4 font-bold hover:opacity-90"
                   >
-                    ⚠ {t("OPEN DISPUTE")}
+                    ⚠ ABRIR DISPUTA
                   </Button>
                 </div>
               )}
@@ -204,6 +260,74 @@ const EscrowMonitor = ({ onOpenDispute }: { onOpenDispute?: (pda: string, id: st
           </div>
         ))}
       </div>
+
+      {/* Dispute Modal */}
+      {disputeModal.isOpen && disputeModal.escrow && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-card border border-border w-full max-w-md p-6 rounded-sm shadow-2xl border-glow flex flex-col gap-4">
+            <h3 className="text-primary font-bold tracking-widest text-sm uppercase">⚠ ABRIR DISPUTA</h3>
+            <p className="text-xs text-muted-foreground font-mono">
+              ESCROW: {disputeModal.escrow.pda_address.slice(0, 8)}...
+            </p>
+            
+            {!disputeModal.verdict ? (
+              <>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-muted-foreground font-bold uppercase">MOTIVO DA DISPUTA</label>
+                  <textarea
+                    value={disputeReason}
+                    onChange={(e) => setDisputeReason(e.target.value)}
+                    maxLength={128}
+                    className="w-full bg-background border border-border rounded-sm p-3 text-xs font-mono text-foreground focus:outline-none focus:border-primary/50 resize-none h-24"
+                    placeholder="Describe specific failure to deliver..."
+                  />
+                  <div className="text-[9px] text-muted-foreground text-right">{disputeReason.length}/128</div>
+                </div>
+                
+                <div className="flex gap-2 justify-end mt-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setDisputeModal({ isOpen: false, loading: false })}
+                    className="text-[10px] font-bold uppercase"
+                    disabled={disputeModal.loading}
+                  >
+                    CANCELAR
+                  </Button>
+                  <Button
+                    style={{ backgroundColor: "#F59E0B", color: "#000" }}
+                    onClick={handleOpenDisputeSubmit}
+                    disabled={disputeModal.loading || !disputeReason}
+                    className="text-[10px] font-bold uppercase hover:opacity-90 min-w-[140px]"
+                  >
+                    {disputeModal.loading ? "PROCESSANDO..." : "CONFIRMAR DISPUTA"}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-3 bg-secondary/30 p-4 border border-border rounded-sm">
+                <span className="text-[10px] uppercase font-bold tracking-widest block text-primary">
+                  ORACLE VERDICT
+                </span>
+                <div className="text-sm font-bold p-2 bg-background border border-border text-center rounded-sm text-foreground">
+                  {disputeModal.verdict.verdict === "payee" ? "✅ ORACLE: LIBERAR PARA BENEFICIÁRIO" : "↩ ORACLE: DEVOLVER AO PAGADOR"}
+                </div>
+                <div className="space-y-1 mt-2">
+                  <span className="text-[9px] text-muted-foreground uppercase">Reasoning</span>
+                  <p className="text-xs font-mono text-foreground p-2 bg-background rounded-sm border border-border">
+                    {disputeModal.verdict.reasoning || "No reasoning provided"}
+                  </p>
+                </div>
+                <Button
+                  onClick={() => setDisputeModal({ isOpen: false, loading: false })}
+                  className="w-full text-[10px] font-bold uppercase mt-2"
+                >
+                  FECHAR
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
