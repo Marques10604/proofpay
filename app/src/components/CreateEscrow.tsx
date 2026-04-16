@@ -64,25 +64,28 @@ const CreateEscrow = ({ onSuccess }: { onSuccess?: () => void }) => {
     if (isSubmitting) return;
     setIsSubmitting(true);
 
+    // [Point 1] Generate random 32-byte identity for escrow - UNIQUE PER SUBMISSION - FIRST LINE
+    const escrowId = crypto.getRandomValues(new Uint8Array(32));
+    const [escrowPda, bump] = PublicKey.findProgramAddressSync(
+      [Buffer.from("escrow"), Buffer.from(escrowId)],
+      PROGRAM_ID
+    );
+
     try {
       setLoading(true);
       setStatus("processing");
       setErrorMsg("");
       
-      // [Point 1] Generate random 32-byte identity for escrow - UNIQUE PER SUBMISSION - FIRST LINE
-      const escrowId = crypto.getRandomValues(new Uint8Array(32));
-
       // Parse inputs
+      const amountFloat = parseFloat(form.amount);
+      if (isNaN(amountFloat) || amountFloat <= 0) {
+        throw new Error("Invalid amount. Please specify a value greater than 0.");
+      }
+
       const payeePubkey = new PublicKey(form.payee);
       const oraclePubkey = new PublicKey(form.oracle);
-      const amount = BigInt(Math.floor(parseFloat(form.amount) * 1_000_000));
+      const amount = BigInt(Math.floor(amountFloat * 1_000_000));
       const timeoutSeconds = BigInt((parseInt(form.timeout) || 30) * 86400);
-
-      // Derive PDA: ["escrow", escrowId]
-      const [escrowPda, bump] = PublicKey.findProgramAddressSync(
-        [Buffer.from("escrow"), Buffer.from(escrowId)],
-        PROGRAM_ID
-      );
 
       const accountInfo = await connection.getAccountInfo(escrowPda);
       if (accountInfo !== null) {
@@ -170,7 +173,7 @@ const CreateEscrow = ({ onSuccess }: { onSuccess?: () => void }) => {
       
       const fundData = Buffer.alloc(16);
       FUND_ESCROW_DISCRIMINATOR.copy(fundData, 0);
-      fundData.writeBigUInt64LE(100000n, 8); 
+      fundData.writeBigUInt64LE(amount, 8); 
 
       // Fetch fresh blockhash IMMEDIATELY before funding transaction creation
       const { blockhash: fundBh, lastValidBlockHeight: fundLvbh } = await connection.getLatestBlockhash("confirmed");
