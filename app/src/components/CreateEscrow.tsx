@@ -64,28 +64,35 @@ const CreateEscrow = ({ onSuccess }: { onSuccess?: () => void }) => {
     if (isSubmitting) return;
     setIsSubmitting(true);
 
-    // [Point 1] Generate random 32-byte identity for escrow - UNIQUE PER SUBMISSION - FIRST LINE
-    const escrowId = crypto.getRandomValues(new Uint8Array(32));
-    const [escrowPda, bump] = PublicKey.findProgramAddressSync(
-      [Buffer.from("escrow"), Buffer.from(escrowId)],
-      PROGRAM_ID
-    );
+    let escrowId: Uint8Array | null = null;
+    let escrowPda: PublicKey | null = null;
+    let bump: number | null = null;
+    let amount: bigint | null = null;
 
     try {
       setLoading(true);
       setStatus("processing");
       setErrorMsg("");
-      
-      // Parse inputs
-      const amountFloat = parseFloat(form.amount);
-      if (isNaN(amountFloat) || amountFloat <= 0) {
-        throw new Error("Invalid amount. Please specify a value greater than 0.");
-      }
 
-      const payeePubkey = new PublicKey(form.payee);
-      const oraclePubkey = new PublicKey(form.oracle);
-      const amount = BigInt(Math.floor(amountFloat * 1_000_000));
-      const timeoutSeconds = BigInt((parseInt(form.timeout) || 30) * 86400);
+      // [Point 2] Parse and validate amount
+      const amountFloat = parseFloat(form.amount);
+      if (!amountFloat || isNaN(amountFloat) || amountFloat <= 0) {
+        toast.error("Digite um valor válido");
+        setStatus("idle");
+        setIsSubmitting(false);
+        setLoading(false);
+        return;
+      }
+      amount = BigInt(Math.floor(amountFloat * 1_000_000));
+
+      // [Point 1] Assign identity and derive PDA inside try block
+      escrowId = crypto.getRandomValues(new Uint8Array(32));
+      const [pda, b] = PublicKey.findProgramAddressSync(
+        [Buffer.from("escrow"), Buffer.from(escrowId)],
+        PROGRAM_ID
+      );
+      escrowPda = pda;
+      bump = b;
 
       const accountInfo = await connection.getAccountInfo(escrowPda);
       if (accountInfo !== null) {
@@ -103,9 +110,9 @@ const CreateEscrow = ({ onSuccess }: { onSuccess?: () => void }) => {
       const data = Buffer.alloc(158);
       let offset = 0;
       CREATE_ESCROW_DISCRIMINATOR.copy(data, offset); offset += 8;
-      Buffer.from(escrowId).copy(data, offset); offset += 32;
+      Buffer.from(escrowId!).copy(data, offset); offset += 32;
       oraclePubkey.toBuffer().copy(data, offset); offset += 32;
-      data.writeBigUInt64LE(amount, offset); offset += 8;
+      data.writeBigUInt64LE(amount!, offset); offset += 8;
       data.writeUInt32LE(1, offset); offset += 4; // milestones_len=1
       milestoneDesc.copy(data, offset); offset += 64;
       data.writeUInt16LE(10000, offset); offset += 2; // 100% in basis points
@@ -168,12 +175,12 @@ const CreateEscrow = ({ onSuccess }: { onSuccess?: () => void }) => {
         'confirmed'
       );
       
-      const vaultAta = getAssociatedTokenAddressSync(DEVNET_USDC, escrowPda, true);
+      const vaultAta = getAssociatedTokenAddressSync(DEVNET_USDC, escrowPda!, true);
       const vaultInfo = await connection.getAccountInfo(vaultAta);
       
       const fundData = Buffer.alloc(16);
       FUND_ESCROW_DISCRIMINATOR.copy(fundData, 0);
-      fundData.writeBigUInt64LE(amount, 8); 
+      fundData.writeBigUInt64LE(amount!, 8); 
 
       // Fetch fresh blockhash IMMEDIATELY before funding transaction creation
       const { blockhash: fundBh, lastValidBlockHeight: fundLvbh } = await connection.getLatestBlockhash("confirmed");
@@ -184,7 +191,7 @@ const CreateEscrow = ({ onSuccess }: { onSuccess?: () => void }) => {
       if (!vaultInfo) {
         fundTransaction.add(
           createAssociatedTokenAccountInstruction(
-            publicKey, vaultAta, escrowPda, DEVNET_USDC
+            publicKey, vaultAta, escrowPda!, DEVNET_USDC
           )
         );
       }
@@ -192,7 +199,7 @@ const CreateEscrow = ({ onSuccess }: { onSuccess?: () => void }) => {
       fundTransaction.add(
         new TransactionInstruction({
           keys: [
-            { pubkey: escrowPda, isSigner: false, isWritable: true },
+            { pubkey: escrowPda!, isSigner: false, isWritable: true },
             { pubkey: publicKey, isSigner: true, isWritable: true },
             { pubkey: payerAta, isSigner: false, isWritable: true },
             { pubkey: vaultAta, isSigner: false, isWritable: true },
@@ -222,16 +229,16 @@ const CreateEscrow = ({ onSuccess }: { onSuccess?: () => void }) => {
       const { data: insertData, error: insertError } = await supabase
         .from('escrows')
         .insert({
-          escrow_id_hex: Buffer.from(escrowId).toString('hex'),
-          pda_address: escrowPda.toString(),
+          escrow_id_hex: Buffer.from(escrowId!).toString('hex'),
+          pda_address: escrowPda!.toString(),
           payer_address: publicKey.toString(),
           payee_address: payeePubkey.toString(),
           usdc_mint: DEVNET_USDC.toString(),
-          total_amount: Number(amount),
+          total_amount: Number(amount!),
           status: 'funded',
           created_at: createdAt,
           timeout_at: timeoutAt,
-          bump,
+          bump: bump!,
           last_tx_signature: fundTxId, // store the funding tx which confirms the 'funded' state
         })
         .select();
