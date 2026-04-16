@@ -184,30 +184,41 @@ app.post('/oracle/evaluate', async (c) => {
         "content-type": "application/json"
       },
       body: JSON.stringify({
-        model: "claude-3-5-haiku-20241022",
+        model: "claude-sonnet-4-5",
         max_tokens: 1024,
+        system: "You are ProofPay's AI arbitration oracle. Analyze B2B escrow disputes on Solana. Given evidence from both parties, determine who should receive the locked funds. Respond in JSON only: { verdict: 'payee' | 'payer', confidence: 0-100, reasoning: string }. Be concise, fair, and base decisions on the evidence provided.",
         messages: [{
           role: "user",
-          content: `You are a B2B payment arbitrator. Based on this evidence, should the milestone payment be released?
-Evidence: ${evidence}
-Respond ONLY with JSON: {decision: 'approve'|'reject', confidence: 0-100, reason: string}`
+          content: `Evidence: ${evidence}`
         }]
       })
     });
 
     const completion = await response.json() as any;
-    const aiDecision = JSON.parse(completion.content[0].text);
+    
+    let aiDecision;
+    try {
+      aiDecision = JSON.parse(completion.content[0].text);
+    } catch (e) {
+      console.error("Failed to parse Oracle JSON:", completion);
+      return c.json({ error: "Oracle response parsing failed" }, 500);
+    }
 
-    if (aiDecision.decision === 'approve') {
-      const escrowIdBytes = Array.isArray(escrow_id) ? new Uint8Array(escrow_id) : new Uint8Array(Object.values(escrow_id));
-      const txid = await client.resolveDispute({ escrowId: escrowIdBytes, releaseToPayee: true, oracleKeypair });
-      await supabase.from("oracle_decisions").insert({ escrow_pda, decision: 'approve', confidence: aiDecision.confidence, reason: aiDecision.reason, tx_signature: txid });
-      return c.json({ status: "success", decision: "approve", txid });
+    let escrowIdBytes;
+    if (typeof escrow_id === 'string') {
+        escrowIdBytes = new Uint8Array(Buffer.from(escrow_id, 'hex'));
     } else {
-      await supabase.from("oracle_decisions").insert({ escrow_pda, decision: 'reject', confidence: aiDecision.confidence, reason: aiDecision.reason, status: 'pending_human_review' });
-      return c.json({ status: "rejected", reason: aiDecision.reason }, 402, {
-        'X-PAYMENT-REQUIRED': JSON.stringify({ price: "10", currency: "USDC", scheme: "exact", network: "solana", payTo: ORACLE_WALLET_ADDRESS, resource: "dispute_appeal" })
-      });
+        escrowIdBytes = Array.isArray(escrow_id) ? new Uint8Array(escrow_id) : new Uint8Array(Object.values(escrow_id));
+    }
+
+    if (aiDecision.verdict === 'payee') {
+      const txid = await client.resolveDispute({ escrowId: escrowIdBytes, releaseToPayee: true, oracleKeypair });
+      await supabase.from("oracle_decisions").insert({ escrow_pda, decision: 'payee', confidence: aiDecision.confidence, reason: aiDecision.reasoning, tx_signature: txid });
+      return c.json({ status: "success", verdict: "payee", confidence: aiDecision.confidence, reasoning: aiDecision.reasoning, txid });
+    } else {
+      const txid = await client.resolveDispute({ escrowId: escrowIdBytes, releaseToPayee: false, oracleKeypair });
+      await supabase.from("oracle_decisions").insert({ escrow_pda, decision: 'payer', confidence: aiDecision.confidence, reason: aiDecision.reasoning, tx_signature: txid });
+      return c.json({ status: "success", verdict: "payer", confidence: aiDecision.confidence, reasoning: aiDecision.reasoning, txid });
     }
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
