@@ -67,16 +67,35 @@ const EscrowMonitor = ({ onOpenDispute }: { onOpenDispute?: (pda: string, id: st
       });
       
       const tx = new Transaction().add(instruction);
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
       tx.recentBlockhash = blockhash;
       tx.feePayer = publicKey;
       
       const signed = await signTransaction(tx);
-      const txid = await connection.sendRawTransaction(signed.serialize());
+      const txid = await connection.sendRawTransaction(signed.serialize(), {
+        skipPreflight: true, // Bypass frontend simulation as it's unreliable here
+      });
       
-      toast.success("Transaction sent, waiting for confirmation...");
-      await connection.confirmTransaction(txid, 'confirmed');
-      toast.success("Transaction confirmed on-chain. Invoking Oracle...");
+      toast.success("Transaction sent, verifying on-chain state...");
+      
+      try {
+        await connection.confirmTransaction(
+          { signature: txid, blockhash, lastValidBlockHeight },
+          'confirmed'
+        );
+        toast.success("Transaction confirmed on-chain.");
+      } catch (confirmError) {
+        console.warn("Confirmation error, checking account state directly...", confirmError);
+        // If confirmation fails but account is already disputed, we proceed
+        const freshInfo = await connection.getAccountInfo(escrowPda);
+        if (freshInfo && freshInfo.data[255] === 4) {
+          toast.success("Disputa já registrada on-chain (confirmada via estado).");
+        } else {
+          throw confirmError;
+        }
+      }
+
+      toast.info("Invoking ProofPay AI Oracle...");
 
       const res = await fetch("https://proofpay-oracle.onrender.com/oracle/evaluate", {
         method: "POST",
@@ -92,7 +111,32 @@ const EscrowMonitor = ({ onOpenDispute }: { onOpenDispute?: (pda: string, id: st
       setDisputeModal(prev => ({ ...prev, loading: false, verdict: result }));
       toast.success("Oracle evaluation completed!");
     } catch (e: any) {
-      console.error(e);
+      console.error("Dispute Flow Error:", e);
+      
+      // Secondary check: verify if the escrow is already in Disputed state (4)
+      try {
+        const escrowPda = new PublicKey(disputeModal.escrow.pda_address);
+        const checkInfo = await connection.getAccountInfo(escrowPda);
+        if (checkInfo && checkInfo.data[255] === 4) {
+          toast.success("Disputa detectada no histórico. Acionando Oráculo...");
+          
+          const res = await fetch("https://proofpay-oracle.onrender.com/oracle/evaluate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              escrow_id: disputeModal.escrow.escrow_id_hex,
+              evidence: disputeReason,
+              disputed_by: publicKey.toString()
+            })
+          });
+          const result = await res.json();
+          setDisputeModal(prev => ({ ...prev, loading: false, verdict: result }));
+          return;
+        }
+      } catch (innerError) {
+        console.error("State check failed", innerError);
+      }
+
       toast.error(e.message || "Failed to open dispute");
       setDisputeModal(prev => ({ ...prev, loading: false }));
     }
