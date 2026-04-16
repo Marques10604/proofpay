@@ -69,8 +69,14 @@ const CreateEscrow = () => {
       setStatus("processing");
       setErrorMsg("");
       
+      // Parse inputs
+      const payeePubkey = new PublicKey(form.payee);
+      const oraclePubkey = new PublicKey(form.oracle);
+      const amount = BigInt(Math.floor(parseFloat(form.amount) * 1_000_000));
+      const timeoutSeconds = BigInt((parseInt(form.timeout) || 30) * 86400);
+
       // Generate random 32-byte identity for escrow
-      const escrowId = crypto.getRandomValues(new Uint8Array(32)); // generated randomly per tx
+      const escrowId = crypto.getRandomValues(new Uint8Array(32));
 
       // Derive PDA: ["escrow", escrowId]
       const [escrowPda, bump] = PublicKey.findProgramAddressSync(
@@ -78,11 +84,15 @@ const CreateEscrow = () => {
         PROGRAM_ID
       );
 
-      // Parse inputs
-      const payeePubkey = new PublicKey(form.payee);
-      const oraclePubkey = new PublicKey(form.oracle);
-      const amount = BigInt(Math.floor(parseFloat(form.amount) * 1_000_000));
-      const timeoutSeconds = BigInt((parseInt(form.timeout) || 30) * 86400);
+      const accountInfo = await connection.getAccountInfo(escrowPda);
+      if (accountInfo !== null) {
+        toast.error("Escrow já existe. Um novo ID será gerado.");
+        crypto.getRandomValues(new Uint8Array(32));
+        setIsSubmitting(false);
+        setLoading(false);
+        setStatus("idle");
+        return;
+      }
 
       const milestoneDesc = Buffer.alloc(64);
       milestoneDesc.write(form.milestone || "Deliverable 1");
@@ -123,7 +133,7 @@ const CreateEscrow = () => {
       }
 
       transaction.add(instruction);
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
       transaction.recentBlockhash = blockhash;
       transaction.feePayer = publicKey;
 
@@ -134,6 +144,11 @@ const CreateEscrow = () => {
         maxRetries: 3
       });
       setTxHash(txid);
+      
+      await connection.confirmTransaction(
+        { signature: txid, blockhash, lastValidBlockHeight },
+        'confirmed'
+      );
       
       const vaultAta = getAssociatedTokenAddressSync(DEVNET_USDC, escrowPda, true);
       const vaultInfo = await connection.getAccountInfo(vaultAta);
@@ -166,7 +181,7 @@ const CreateEscrow = () => {
         })
       );
 
-      const { blockhash: fundBh, lastValidBlockHeight: fundLvbh } = await connection.getLatestBlockhash();
+      const { blockhash: fundBh, lastValidBlockHeight: fundLvbh } = await connection.getLatestBlockhash("confirmed");
       fundTransaction.recentBlockhash = fundBh;
       fundTransaction.feePayer = publicKey;
 
@@ -176,7 +191,7 @@ const CreateEscrow = () => {
         preflightCommitment: 'confirmed',
         maxRetries: 3
       });
-      // Wait for fund TX to confirm before writing to DB
+      
       await connection.confirmTransaction(
         { signature: fundTxId, blockhash: fundBh, lastValidBlockHeight: fundLvbh },
         'confirmed'
