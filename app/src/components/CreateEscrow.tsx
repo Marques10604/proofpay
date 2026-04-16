@@ -75,7 +75,7 @@ const CreateEscrow = () => {
       const amount = BigInt(Math.floor(parseFloat(form.amount) * 1_000_000));
       const timeoutSeconds = BigInt((parseInt(form.timeout) || 30) * 86400);
 
-      // Generate random 32-byte identity for escrow
+      // Generate random 32-byte identity for escrow - UNIQUE PER SUBMISSION
       const escrowId = crypto.getRandomValues(new Uint8Array(32));
 
       // Derive PDA: ["escrow", escrowId]
@@ -86,8 +86,7 @@ const CreateEscrow = () => {
 
       const accountInfo = await connection.getAccountInfo(escrowPda);
       if (accountInfo !== null) {
-        toast.error("Escrow já existe. Um novo ID será gerado.");
-        crypto.getRandomValues(new Uint8Array(32));
+        toast.error("Escrow já existe. Gerando novo ID...");
         setIsSubmitting(false);
         setLoading(false);
         setStatus("idle");
@@ -120,7 +119,12 @@ const CreateEscrow = () => {
         data: data,
       });
 
+      // Fetch fresh blockhash IMMEDIATELY before transaction creation
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
       const transaction = new Transaction();
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = publicKey;
+
       const payerAta = getAssociatedTokenAddressSync(DEVNET_USDC, publicKey);
       const ataInfo = await connection.getAccountInfo(payerAta);
       
@@ -133,9 +137,6 @@ const CreateEscrow = () => {
       }
 
       transaction.add(instruction);
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-      transaction.recentBlockhash = blockhash;
-      transaction.feePayer = publicKey;
 
       const signed = await signTransaction(transaction);
       const txid = await connection.sendRawTransaction(signed.serialize(), {
@@ -145,6 +146,7 @@ const CreateEscrow = () => {
       });
       setTxHash(txid);
       
+      // Wait for creation to confirm before funding
       await connection.confirmTransaction(
         { signature: txid, blockhash, lastValidBlockHeight },
         'confirmed'
@@ -157,7 +159,12 @@ const CreateEscrow = () => {
       FUND_ESCROW_DISCRIMINATOR.copy(fundData, 0);
       fundData.writeBigUInt64LE(100000n, 8); 
 
+      // Fetch fresh blockhash IMMEDIATELY before funding transaction creation
+      const { blockhash: fundBh, lastValidBlockHeight: fundLvbh } = await connection.getLatestBlockhash("confirmed");
       const fundTransaction = new Transaction();
+      fundTransaction.recentBlockhash = fundBh;
+      fundTransaction.feePayer = publicKey;
+
       if (!vaultInfo) {
         fundTransaction.add(
           createAssociatedTokenAccountInstruction(
@@ -180,10 +187,6 @@ const CreateEscrow = () => {
           data: fundData,
         })
       );
-
-      const { blockhash: fundBh, lastValidBlockHeight: fundLvbh } = await connection.getLatestBlockhash("confirmed");
-      fundTransaction.recentBlockhash = fundBh;
-      fundTransaction.feePayer = publicKey;
 
       const signedFund = await signTransaction(fundTransaction);
       const fundTxId = await connection.sendRawTransaction(signedFund.serialize(), {
