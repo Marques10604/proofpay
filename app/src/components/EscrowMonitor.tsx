@@ -33,17 +33,21 @@ const EscrowMonitor = ({ onOpenDispute }: { onOpenDispute?: (pda: string, id: st
   const [disputeModal, setDisputeModal] = useState<{ isOpen: boolean; escrow?: any; loading: boolean; verdict?: any; timedOut?: boolean }>({ isOpen: false, loading: false });
   const [disputeReason, setDisputeReason] = useState("");
 
-  const callOracleWithTimeout = async (escrowIdHex: string, evidence: string, disputedBy: string) => {
+  const callOracleWithTimeout = async (escrowIdHex: string, evidence: string, escrowPda: string) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 45000);
     try {
       const res = await fetch("https://proofpay-oracle.onrender.com/oracle/evaluate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ escrow_id: escrowIdHex, evidence, disputed_by: disputedBy }),
+        body: JSON.stringify({ escrow_id: escrowIdHex, evidence, escrow_pda: escrowPda }),
         signal: controller.signal
       });
       clearTimeout(timeoutId);
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(errBody.error || `HTTP ${res.status}`);
+      }
       return await res.json();
     } catch (e: any) {
       clearTimeout(timeoutId);
@@ -60,7 +64,7 @@ const EscrowMonitor = ({ onOpenDispute }: { onOpenDispute?: (pda: string, id: st
       const result = await callOracleWithTimeout(
         disputeModal.escrow.escrow_id_hex,
         disputeReason,
-        publicKey.toString()
+        disputeModal.escrow.pda_address
       );
       setDisputeModal(prev => ({ ...prev, loading: false, verdict: result }));
       toast.success("Oracle evaluation completed!");
@@ -142,7 +146,7 @@ const EscrowMonitor = ({ onOpenDispute }: { onOpenDispute?: (pda: string, id: st
       const result = await callOracleWithTimeout(
         disputeModal.escrow.escrow_id_hex,
         disputeReason,
-        publicKey.toString()
+        disputeModal.escrow.pda_address
       );
 
       setDisputeModal(prev => ({ ...prev, loading: false, verdict: result }));
@@ -167,7 +171,7 @@ const EscrowMonitor = ({ onOpenDispute }: { onOpenDispute?: (pda: string, id: st
           const result = await callOracleWithTimeout(
             disputeModal.escrow.escrow_id_hex,
             disputeReason,
-            publicKey.toString()
+            disputeModal.escrow.pda_address
           );
           setDisputeModal(prev => ({ ...prev, loading: false, verdict: result }));
           return;
