@@ -30,8 +30,50 @@ const EscrowMonitor = ({ onOpenDispute }: { onOpenDispute?: (pda: string, id: st
   const [fetching, setFetching] = useState(true);
 
   // Dispute Flow States
-  const [disputeModal, setDisputeModal] = useState<{ isOpen: boolean; escrow?: any; loading: boolean; verdict?: any }>({ isOpen: false, loading: false });
+  const [disputeModal, setDisputeModal] = useState<{ isOpen: boolean; escrow?: any; loading: boolean; verdict?: any; timedOut?: boolean }>({ isOpen: false, loading: false });
   const [disputeReason, setDisputeReason] = useState("");
+
+  const callOracleWithTimeout = async (escrowIdHex: string, evidence: string, disputedBy: string) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
+    try {
+      const res = await fetch("https://proofpay-oracle.onrender.com/oracle/evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ escrow_id: escrowIdHex, evidence, disputed_by: disputedBy }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      return await res.json();
+    } catch (e: any) {
+      clearTimeout(timeoutId);
+      if (e.name === "AbortError") throw new Error("ORACLE_TIMEOUT");
+      throw e;
+    }
+  };
+
+  const retryOracleCall = async () => {
+    if (!disputeModal.escrow || !publicKey) return;
+    setDisputeModal(prev => ({ ...prev, loading: true, timedOut: false }));
+    toast.info("Retrying Oracle...");
+    try {
+      const result = await callOracleWithTimeout(
+        disputeModal.escrow.escrow_id_hex,
+        disputeReason,
+        publicKey.toString()
+      );
+      setDisputeModal(prev => ({ ...prev, loading: false, verdict: result }));
+      toast.success("Oracle evaluation completed!");
+    } catch (e: any) {
+      if (e.message === "ORACLE_TIMEOUT") {
+        toast.warning("Oracle is waking up, please try again in 30 seconds");
+        setDisputeModal(prev => ({ ...prev, loading: false, timedOut: true }));
+      } else {
+        toast.error(e.message || "Oracle error");
+        setDisputeModal(prev => ({ ...prev, loading: false, timedOut: false }));
+      }
+    }
+  };
 
   const handleOpenDisputeSubmit = async () => {
     if (!disputeModal.escrow || !publicKey || !signTransaction) return;
@@ -97,43 +139,45 @@ const EscrowMonitor = ({ onOpenDispute }: { onOpenDispute?: (pda: string, id: st
 
       toast.info("Invoking ProofPay AI Oracle...");
 
-      const res = await fetch("https://proofpay-oracle.onrender.com/oracle/evaluate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          escrow_id: disputeModal.escrow.escrow_id_hex,
-          evidence: disputeReason,
-          disputed_by: publicKey.toString()
-        })
-      });
-      const result = await res.json();
-      
+      const result = await callOracleWithTimeout(
+        disputeModal.escrow.escrow_id_hex,
+        disputeReason,
+        publicKey.toString()
+      );
+
       setDisputeModal(prev => ({ ...prev, loading: false, verdict: result }));
       toast.success("Oracle evaluation completed!");
     } catch (e: any) {
       console.error("Dispute Flow Error:", e);
-      
+
+      // If oracle timed out, show retry UI immediately — skip secondary check
+      if (e.message === "ORACLE_TIMEOUT") {
+        toast.warning("Oracle is waking up, please try again in 30 seconds");
+        setDisputeModal(prev => ({ ...prev, loading: false, timedOut: true }));
+        return;
+      }
+
       // Secondary check: verify if the escrow is already in Disputed state (4)
       try {
         const escrowPda = new PublicKey(disputeModal.escrow.pda_address);
         const checkInfo = await connection.getAccountInfo(escrowPda);
         if (checkInfo && checkInfo.data[255] === 4) {
           toast.success("Disputa detectada no histórico. Acionando Oráculo...");
-          
-          const res = await fetch("https://proofpay-oracle.onrender.com/oracle/evaluate", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              escrow_id: disputeModal.escrow.escrow_id_hex,
-              evidence: disputeReason,
-              disputed_by: publicKey.toString()
-            })
-          });
-          const result = await res.json();
+
+          const result = await callOracleWithTimeout(
+            disputeModal.escrow.escrow_id_hex,
+            disputeReason,
+            publicKey.toString()
+          );
           setDisputeModal(prev => ({ ...prev, loading: false, verdict: result }));
           return;
         }
-      } catch (innerError) {
+      } catch (innerError: any) {
+        if (innerError.message === "ORACLE_TIMEOUT") {
+          toast.warning("Oracle is waking up, please try again in 30 seconds");
+          setDisputeModal(prev => ({ ...prev, loading: false, timedOut: true }));
+          return;
+        }
         console.error("State check failed", innerError);
       }
 
@@ -328,7 +372,33 @@ const EscrowMonitor = ({ onOpenDispute }: { onOpenDispute?: (pda: string, id: st
               ESCROW: {disputeModal.escrow.pda_address.slice(0, 8)}...
             </p>
             
-            {!disputeModal.verdict ? (
+            {disputeModal.timedOut ? (
+              <div className="space-y-4">
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-sm p-4 text-center space-y-2">
+                  <span className="text-yellow-400 text-xs font-bold uppercase tracking-widest block">⏳ ORACLE WARMING UP</span>
+                  <p className="text-xs text-muted-foreground font-mono">
+                    Oracle is waking up, please try again in 30 seconds
+                  </p>
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => setDisputeModal({ isOpen: false, loading: false })}
+                    className="text-[10px] font-bold uppercase"
+                  >
+                    CANCELAR
+                  </Button>
+                  <Button
+                    style={{ backgroundColor: "#F59E0B", color: "#000" }}
+                    onClick={retryOracleCall}
+                    disabled={disputeModal.loading}
+                    className="text-[10px] font-bold uppercase hover:opacity-90 min-w-[140px]"
+                  >
+                    {disputeModal.loading ? "AGUARDANDO..." : "↺ TENTAR NOVAMENTE"}
+                  </Button>
+                </div>
+              </div>
+            ) : !disputeModal.verdict ? (
               <>
                 <div className="space-y-1">
                   <label className="text-[10px] text-muted-foreground font-bold uppercase">MOTIVO DA DISPUTA</label>
