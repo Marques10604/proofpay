@@ -26,3 +26,15 @@ Thumbs.db
 *.swp
 
 .vercel
+
+# Claude Code local settings
+.claude/
+
+# Vite build cache
+app/vite.config.ts.timestamp-*.mjs
+
+# Research / scratch scripts (not project code)
+copilot_q*.json
+fetch.mjs
+fetch2.mjs
+parser.py
