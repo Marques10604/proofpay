@@ -188,7 +188,7 @@ app.post('/oracle/evaluate', async (c) => {
       },
       signal: controller.signal,
       body: JSON.stringify({
-        model: "claude-sonnet-4-5",
+        model: "claude-sonnet-4-6",
         max_tokens: 1024,
         system: "You are ProofPay's AI arbitration oracle. Analyze B2B escrow disputes on Solana. Given evidence from both parties, determine who should receive the locked funds. Respond in JSON only: { verdict: 'payee' | 'payer', confidence: 0-100, reasoning: string }. Be concise, fair, and base decisions on the evidence provided.",
         messages: [{
