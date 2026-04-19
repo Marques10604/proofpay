@@ -22,6 +22,30 @@ const DisputePanel = ({ initialPda = "", initialId = "" }: DisputePanelProps) =>
   const [loading, setLoading] = useState(false);
 
   const [oracleLoading, setOracleLoading] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
+
+  const callOracleWithTimeout = async (escrowIdBytes: number[], evidence: string, escrowPda: string) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
+    try {
+      const res = await fetch("https://proofpay-oracle.onrender.com/oracle/evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ escrow_id: escrowIdBytes, evidence, escrow_pda: escrowPda }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(errBody.error || `HTTP ${res.status}`);
+      }
+      return await res.json();
+    } catch (e: any) {
+      clearTimeout(timeoutId);
+      if (e.name === "AbortError") throw new Error("ORACLE_TIMEOUT");
+      throw e;
+    }
+  };
 
   const { connection } = useConnection();
   const { publicKey, signTransaction } = useWallet();
@@ -96,33 +120,10 @@ const DisputePanel = ({ initialPda = "", initialId = "" }: DisputePanelProps) =>
       // Transition to Oracle Loading State
       setLoading(false);
       setOracleLoading(true);
+      setTimedOut(false);
 
-      // Call oracle evaluate
-      const response = await fetch("https://proofpay-oracle.onrender.com/oracle/evaluate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          escrow_id: Array.from(escrowIdBytes),
-          evidence: reason,
-          escrow_pda: escrowPda,
-        }),
-      });
+      const result = await callOracleWithTimeout(Array.from(escrowIdBytes), reason, escrowPda);
 
-      let result;
-      if (!response.ok) {
-        try {
-          result = await response.json();
-        } catch {
-          throw new Error("Oracle failed: " + await response.text());
-        }
-        if (response.status !== 402) {
-          throw new Error(result.error || "Oracle failed");
-        }
-      } else {
-        result = await response.json();
-      }
-
-      // Provide default confidence if not returned by server
       if (result.confidence === undefined) result.confidence = 94;
 
       setOracleVerdict(result);
@@ -130,7 +131,12 @@ const DisputePanel = ({ initialPda = "", initialId = "" }: DisputePanelProps) =>
 
     } catch (err: any) {
       console.error(err);
-      toast.error(`Error: ${err.message}`);
+      if (err.message === "ORACLE_TIMEOUT") {
+        setTimedOut(true);
+        toast.error("Oracle não respondeu em 45s. Tente novamente.");
+      } else {
+        toast.error(`Error: ${err.message}`);
+      }
     } finally {
       setLoading(false);
       setOracleLoading(false);
@@ -192,9 +198,8 @@ const DisputePanel = ({ initialPda = "", initialId = "" }: DisputePanelProps) =>
             />
           </div>
 
-          <div className="flex items-center justify-between py-2 border-t border-b border-border/50 text-xs font-mono">
-            <span className="text-muted-foreground">{t("DISPUTE BOND")}:</span>
-            <span className="text-terminal-red font-bold">3.00 USDC</span>
+          <div className="py-2 border-t border-b border-border/50 text-xs font-mono text-muted-foreground">
+            Após abrir a disputa on-chain, a evidência será analisada automaticamente pelo oracle de IA do ProofPay.
           </div>
 
           <div className="space-y-3">
@@ -212,6 +217,12 @@ const DisputePanel = ({ initialPda = "", initialId = "" }: DisputePanelProps) =>
                 <span className="text-xs font-mono text-cyan-400 animate-pulse">
                   🤖 IA ORACLE ANALISANDO EVIDÊNCIAS...
                 </span>
+              </div>
+            )}
+
+            {timedOut && !oracleLoading && (
+              <div className="text-xs font-mono text-terminal-red text-center py-2">
+                ⚠ Oracle não respondeu em 45s (cold start). Tente novamente.
               </div>
             )}
           </div>
