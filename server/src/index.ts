@@ -217,11 +217,13 @@ app.post('/oracle/evaluate', async (c) => {
 
     if (aiDecision.verdict === 'payee') {
       const txid = await client.resolveDispute({ escrowId: escrowIdBytes, releaseToPayee: true, oracleKeypair });
-      await supabase.from("oracle_decisions").insert({ escrow_pda, decision: 'payee', confidence: aiDecision.confidence, reason: aiDecision.reasoning, tx_signature: txid });
+      const { error: dbErr } = await supabase.from("oracle_decisions").insert({ escrow_pda, decision: 'approve', confidence: aiDecision.confidence, reason: aiDecision.reasoning, tx_signature: txid });
+      if (dbErr) console.error("Supabase insert error (approve):", dbErr.message, dbErr.details);
       return c.json({ status: "success", verdict: "payee", confidence: aiDecision.confidence, reasoning: aiDecision.reasoning, txid });
     } else {
       const txid = await client.resolveDispute({ escrowId: escrowIdBytes, releaseToPayee: false, oracleKeypair });
-      await supabase.from("oracle_decisions").insert({ escrow_pda, decision: 'payer', confidence: aiDecision.confidence, reason: aiDecision.reasoning, tx_signature: txid });
+      const { error: dbErr } = await supabase.from("oracle_decisions").insert({ escrow_pda, decision: 'reject', confidence: aiDecision.confidence, reason: aiDecision.reasoning, tx_signature: null });
+      if (dbErr) console.error("Supabase insert error (reject):", dbErr.message, dbErr.details);
       return c.json({ status: "success", verdict: "payer", confidence: aiDecision.confidence, reasoning: aiDecision.reasoning, txid });
     }
   } catch (e: any) {
